@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scriptcast"
+version = "0.1.0"
+description = "Generate terminal demos (asciinema casts & GIFs) from simple shell-like scripts."
+requires-python = ">=3.10"
+authors = [
+    {name = "Nasser Alansari", email = "dacrystal@users.noreply.github.com"},
+]
+license = {text = "MIT"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "click>=8.0",
+]
+
+[project.scripts]
+scriptcast = "scriptcast.__main__:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
