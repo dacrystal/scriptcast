@@ -8,9 +8,8 @@ from pathlib import Path
 import click
 
 from .config import ScriptcastConfig
-from .generator import generate_all_scenes
+from .generator import generate_from_sc
 from .gif import AggNotFoundError, generate_gif
-from .parser import parse_sc_file
 from .recorder import record as do_record
 
 
@@ -99,14 +98,9 @@ def cli(ctx, output_dir, directive_prefix, trace_prefix, title, shell, split_sce
     out_dir.mkdir(parents=True, exist_ok=True)
 
     config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell, title)
-
     sc_path = out_dir / script_path.with_suffix(".sc").name
     do_record(script_path, sc_path, config, resolved_shell)
-
-    base_config, events = parse_sc_file(sc_path)
-    base_config.show_title = title
-    base_config.split_scenes = split_scenes
-    generate_all_scenes(events, base_config, out_dir, output_stem=script_path.stem)
+    generate_from_sc(sc_path, out_dir, output_stem=script_path.stem, show_title=title, split_scenes=split_scenes)
 
 
 @cli.command()
@@ -120,7 +114,6 @@ def record(script, output_dir, directive_prefix, trace_prefix, shell):
     script_path = Path(script)
     out_dir = Path(output_dir) if output_dir else script_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-
     config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell, False)
     sc_path = out_dir / script_path.with_suffix(".sc").name
     do_record(script_path, sc_path, config, resolved_shell)
@@ -133,15 +126,11 @@ def record(script, output_dir, directive_prefix, trace_prefix, shell):
 @click.option("--title/--no-title", default=False)
 @click.option("--split-scenes/--no-split-scenes", default=False)
 def generate(sc_file, output_dir, title, split_scenes):
-    """Stage 2: parse .sc and write .cast file(s)."""
+    """Stage 2: read .sc and write .cast file(s)."""
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    config, events = parse_sc_file(sc_path)
-    config.show_title = title
-    config.split_scenes = split_scenes
-    paths = generate_all_scenes(events, config, out_dir, output_stem=sc_path.stem)
+    paths = generate_from_sc(sc_path, out_dir, show_title=title, split_scenes=split_scenes)
     for p in paths:
         click.echo(f"Generated: {p}")
 
@@ -154,12 +143,8 @@ def gif(sc_file, output_dir):
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    config, events = parse_sc_file(sc_path)
-    config.split_scenes = True
-    cast_paths = generate_all_scenes(events, config, out_dir, output_stem=sc_path.stem)
-
-    for cast_path in cast_paths:
+    paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
+    for cast_path in paths:
         try:
             gif_path = generate_gif(cast_path)
             click.echo(f"Generated: {gif_path}")
@@ -168,8 +153,6 @@ def gif(sc_file, output_dir):
 
 
 if __name__ == "__main__":
-    # Handle shebang invocation: on Linux the shebang args may arrive as one
-    # combined string. Detect and split them.
     if len(sys.argv) >= 2 and sys.argv[1].startswith("--") and " " in sys.argv[1]:
         extra = shlex.split(sys.argv[1])
         sys.argv = [sys.argv[0]] + extra + sys.argv[2:]

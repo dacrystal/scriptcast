@@ -35,21 +35,22 @@ def test_basic_example_end_to_end_split_mode(tmp_path):
 
     cast_files = sorted(tmp_path.glob("*.cast"))
     names = {f.stem for f in cast_files}
-    assert names == {"intro", "mock", "db", "filter"}
+    assert names == {"intro", "mock", "expect", "filter"}
 
 
 def test_basic_example_record_stage(tmp_path):
-    """`scriptcast record` on basic.sh produces a .sc file with the right header."""
+    """`scriptcast record` on basic.sh produces a .sc file with JSONL header."""
+    import json as _json
     runner = CliRunner()
     result = runner.invoke(cli, ["record", str(BASIC_SCRIPT), "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
 
     sc_file = tmp_path / "basic.sc"
     assert sc_file.exists()
-    content = sc_file.read_text()
-    assert "#shell=" in content
-    assert "#trace-prefix=+" in content
-    assert "#directive-prefix=SC" in content
+    header = _json.loads(sc_file.read_text().splitlines()[0])
+    assert header["version"] == 1
+    assert "shell" in header
+    assert header["directive-prefix"] == "SC"
 
 
 def test_basic_example_mock_scene_shows_command(tmp_path):

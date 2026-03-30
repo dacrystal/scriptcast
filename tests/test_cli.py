@@ -15,14 +15,13 @@ def test_record_subcommand(tmp_path):
 
 
 def test_generate_subcommand(tmp_path):
+    import json as _json
     sc = tmp_path / "demo.sc"
     sc.write_text(
-        "#shell=bash\n"
-        "#trace-prefix=+\n"
-        "#directive-prefix=SC\n"
-        "1.0 + : SC scene main\n"
-        "1.1 + echo hi\n"
-        "1.2 hi\n"
+        _json.dumps({"version": 1, "shell": "bash", "directive-prefix": "SC"}) + "\n"
+        + _json.dumps([1.0, "directive", "scene main"]) + "\n"
+        + _json.dumps([1.1, "cmd", "echo hi"]) + "\n"
+        + _json.dumps([1.2, "output", "hi"]) + "\n"
     )
     runner = CliRunner()
     result = runner.invoke(cli, ["generate", str(sc), "--output-dir", str(tmp_path), "--split-scenes"])
@@ -46,6 +45,7 @@ def test_missing_script_errors():
 
 
 def test_directive_prefix_flag(tmp_path):
+    import json as _json
     script = tmp_path / "demo.sh"
     script.write_text("echo hello\n")
     runner = CliRunner()
@@ -54,8 +54,8 @@ def test_directive_prefix_flag(tmp_path):
         ["record", str(script), "--directive-prefix", "DEMO", "--output-dir", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    content = (tmp_path / "demo.sc").read_text()
-    assert "#directive-prefix=DEMO" in content
+    header = _json.loads((tmp_path / "demo.sc").read_text().splitlines()[0])
+    assert header["directive-prefix"] == "DEMO"
 
 
 def test_split_scenes_flag_produces_per_scene_files(tmp_path):

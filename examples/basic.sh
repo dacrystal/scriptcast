@@ -34,9 +34,9 @@ Deploy: OK
 EOF
 
 # ----------------------------------------
-# Scene — DB (expect)
+# Scene — expect
 # ----------------------------------------
-: SC scene db
+: SC scene expect
 
 : SC expect ./fake-db <<'EOF'
 expect "Password:"
@@ -45,6 +45,7 @@ expect "mysql>"
 send "show databases;\r"
 expect "mysql>"
 send "exit\r"
+expect eof
 EOF
 
 # ----------------------------------------
