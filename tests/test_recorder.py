@@ -116,7 +116,7 @@ def test_preprocess_expect_rewrites_directive():
     result = _preprocess(script)
     assert "expect <<'EOF'" in result
     assert "spawn mysql -u root" in result
-    assert 'send_user ": SC mark input"' in result
+    assert 'send_user ": SC mark input\\n"' in result
     assert 'send "secret\\r"' in result
     assert ": SC expect" not in result
 
@@ -131,7 +131,7 @@ def test_preprocess_expect_injects_marker_before_each_send():
         "EOF\n"
     )
     result = _preprocess(script)
-    assert result.count('send_user ": SC mark input"') == 2
+    assert result.count('send_user ": SC mark input\\n"') == 2
 
 
 def test_preprocess_expect_prepends_spawn():
@@ -206,3 +206,17 @@ def test_record_mock_directive_produces_command_trace(tmp_path):
     assert "Deploying..." in content
     assert "+ : SC mark mock" not in content
     assert "+ set +x" not in content
+
+
+def test_record_cwd_is_script_directory(tmp_path):
+    """record() runs the script with cwd set to the script's parent directory."""
+    script = tmp_path / "demo.sh"
+    helper = tmp_path / "helper.txt"
+    helper.write_text("hello from helper\n")
+    script.write_text("cat helper.txt\n")
+    sc_path = tmp_path / "demo.sc"
+    config = ScriptcastConfig()
+    shell = shutil.which("bash")
+    record(script, sc_path, config, shell)
+    content = sc_path.read_text()
+    assert "hello from helper" in content

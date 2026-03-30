@@ -56,7 +56,7 @@ def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
             new_body: list[str] = [f"spawn {cmd_args}\n"]
             for bl in body:
                 if re.match(r"^\s*send\s+", bl):
-                    new_body.append(f'send_user ": {directive_prefix} mark input"\n')
+                    new_body.append(f'send_user ": {directive_prefix} mark input\\n"\n')
                 new_body.append(bl)
             result.append(f"expect <<'{delim}'\n")
             result.extend(new_body)
@@ -137,6 +137,7 @@ def record(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            cwd=script_path.parent,
         )
         raw_lines: list[str] = []
         for line in proc.stdout:

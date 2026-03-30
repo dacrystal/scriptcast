@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+printf "Password: "
+read -rs password
+echo
+echo "Welcome to FakeDB (mysql 8.0)"
+while true; do
+    printf "mysql> "
+    read -r cmd
+    [ "$cmd" = "exit" ] && echo "Bye!" && break
+    echo "(0 rows)"
+done
