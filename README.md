@@ -128,6 +128,12 @@ EOF
 
 pwd
 
+# ── Scene: comment ────────────────────────────
+: SC scene comment
+
+: SC '\' This is a visual comment
+echo "comments appear as prompt lines in the cast"
+
 # ── Scene: setup (not recorded) ───────────────
 : SC scene setup
 
@@ -148,8 +154,9 @@ These are consumed during recording and never appear in the `.sc` file.
 | `SC expect <cmd> <<'EOF'` ... `EOF` | Run an interactive session via [expect(1)](https://core.tcl-lang.org/expect/index) |
 | `SC record pause` | Stop capturing output (commands still execute) |
 | `SC record resume` | Resume capturing |
-| `SC filter sed '<expr>'` | Replace the current output filter with a sed expression |
-| `SC filter-add sed '<expr>'` | Append a sed expression to the current filter chain |
+| `SC filter <cmd> [args...]` | Replace the current output filter with a shell command (stdin→stdout) |
+| `SC filter-add <cmd> [args...]` | Append a command to the current filter chain |
+| `SC '\' <text>` | Emit a `# text` comment line in the cast (visual annotation) |
 
 #### `SC expect` syntax
 
