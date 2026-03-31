@@ -238,18 +238,38 @@ def test_postprocess_filter_add_appends():
 
 
 def test_postprocess_emits_input_event_for_mark_input():
-    raw = "1.000 : SC mark input secret\n"
+    raw = (
+        "1.000 + expect myapp\n"
+        "1.001 spawn myapp\n"
+        "1.002 : SC mark input secret\n"
+    )
     events = _parse_sc_events(_postprocess(raw))
-    # No pty echo follows, so input is silent (empty string)
     assert any(e[1] == "input" for e in events)
 
 
 def test_postprocess_emits_output_prefix_before_input():
-    raw = "1.000 Password: : SC mark input secret\n"
+    raw = (
+        "1.000 + expect myapp\n"
+        "1.001 spawn myapp\n"
+        "1.002 Password: : SC mark input secret\n"
+    )
     events = _parse_sc_events(_postprocess(raw))
     types = [e[1] for e in events]
     assert "output" in types and "input" in types
     assert types.index("output") < types.index("input")
+
+
+def test_postprocess_mark_input_empty_prefix_stays_in_session():
+    """Mark input line with empty output prefix must not escape the expect session."""
+    raw = (
+        "1.000 + : SC mark expect ./myapp\n"
+        "1.001 spawn ./myapp\n"
+        "1.002 : SC mark input secret\n"
+        "1.003 + echo after\n"
+    )
+    events = _parse_sc_events(_postprocess(raw))
+    assert any(e[1] == "input" for e in events)
+    assert any(e[1] == "cmd" and "echo after" in e[2] for e in events)
 
 
 def test_postprocess_custom_trace_prefix():

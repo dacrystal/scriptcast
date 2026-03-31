@@ -7,93 +7,32 @@ import subprocess
 import tempfile
 import time
 import warnings
+from collections import deque
 from pathlib import Path
 from typing import Union
 
 from .config import ScriptcastConfig
 from .shell import get_adapter
+from .directives import (
+    RecorderDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective,
+    ScDirective,
+)
 
 
 def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
     """Rewrite SC mock/expect directives to executable shell before recording."""
-    dp = re.escape(directive_prefix)
-    mock_re = re.compile(rf"^:\s+{dp}\s+mock\s+(.+?)\s*<<(['\"]?)(\w+)\2\s*$")
-    expect_re = re.compile(rf"^:\s+{dp}\s+expect\s+(.+?)\s*<<(['\"]?)(\w+)\2\s*$")
-
-    lines = script_text.splitlines(keepends=True)
-    result: list[str] = []
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].rstrip("\n\r")
-
-        m = mock_re.match(stripped)
-        if m:
-            cmd_args = m.group(1).strip()
-            delim = m.group(3)
-            i += 1
-            body: list[str] = []
-            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
-                body.append(lines[i])
-                i += 1
-            closing = lines[i] if i < len(lines) else delim + "\n"
-            result.append(
-                f"(: {directive_prefix} mark mock; set +x; echo + {cmd_args}; cat) <<'{delim}'\n"
-            )
-            result.extend(body)
-            result.append(closing)
-            i += 1
-            continue
-
-        m = expect_re.match(stripped)
-        if m:
-            cmd_args = m.group(1).strip()
-            delim = m.group(3)
-            i += 1
-            body = []
-            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
-                body.append(lines[i])
-                i += 1
-            closing = lines[i] if i < len(lines) else delim + "\n"
-            new_body: list[str] = [f"spawn {cmd_args}\n"]
-            _send_re = re.compile(r"""^\s*send\s+(['"])(.*?)\1\s*$""")
-            for bl in body:
-                sm = _send_re.match(bl.rstrip("\n\r"))
-                if sm:
-                    input_text = sm.group(2)
-                    if input_text.endswith("\\r"):
-                        input_text = input_text[:-2]
-                    new_body.append(f'send_user ": {directive_prefix} mark input {input_text}\\n"\n')
-                elif re.match(r"^\s*send\s+", bl):
-                    new_body.append(f'send_user ": {directive_prefix} mark input\\n"\n')
-                new_body.append(bl)
-            result.append(f"expect <<'{delim}'\n")
-            result.extend(new_body)
-            result.append(closing)
-            i += 1
-            continue
-
-        result.append(lines[i])
-        i += 1
-
-    return "".join(result)
-
-
-def _compile_sed_filter(expr: str):
-    """Compile a sed s/pattern/replacement/flags expression to a Python callable."""
-    if len(expr) >= 2 and expr[0] in ('"', "'") and expr[-1] == expr[0]:
-        expr = expr[1:-1]
-    if not expr.startswith("s"):
-        raise ValueError(f"Only s/// sed expressions are supported, got: {expr!r}")
-    delim = expr[1]
-    parts = expr[2:].split(delim)
-    if len(parts) < 2:
-        raise ValueError(f"Cannot parse sed expression: {expr!r}")
-    pattern, replacement = parts[0], parts[1]
-    flags_str = parts[2] if len(parts) > 2 else ""
-    re_flags = re.IGNORECASE if "i" in flags_str else 0
-    count = 0 if "g" in flags_str else 1
-    compiled = re.compile(pattern, re_flags)
-    return lambda text: compiled.sub(replacement, text, count=count)
+    directives = [MockDirective(directive_prefix), ExpectDirective(directive_prefix)]
+    queue: deque[str] = deque(script_text.splitlines(keepends=True))
+    out: list[str] = []
+    while queue:
+        for d in directives:
+            result = d.pre(queue)
+            if result is not None:
+                out.extend(result)
+                break
+        else:
+            out.append(queue.popleft())
+    return "".join(out)
 
 
 def _postprocess(
@@ -104,130 +43,40 @@ def _postprocess(
     """Convert raw .log text to JSONL .sc body (no header line)."""
     dp = directive_prefix
     tp = trace_prefix
-    mark_input_re = re.compile(rf"(.*?): {re.escape(dp)} mark input\s*(.*?)$")
+    trace_marker = f"{tp} "
 
-    lines = raw_text.splitlines()
-    result: list[str] = []
-    skip_next = False
-    paused = False
-    filters: list = []
-    pending_echo: str | None = None  # for trace-based mark input (skip pty echo)
-    pending_input_marker: str | None = None  # for inline mark input (delay input event)
-    ts = 0.0
-
-    def apply_filters(text: str) -> str:
-        for f in filters:
-            text = f(text)
-        return text
-
-    for line in lines:
-        ts_str, _, content = line.partition(" ")
+    queue: deque[tuple[float, str]] = deque()
+    for raw in raw_text.splitlines():
+        ts_str, _, content = raw.partition(" ")
         try:
-            ts = float(ts_str)
+            ts_val = float(ts_str)
         except ValueError:
             continue
-        content = content.rstrip("\n\r")
+        queue.append((ts_val, content.rstrip("\n\r")))
 
-        if skip_next:
-            skip_next = False
-            # "spawn <cmd>" line from expect — emit as a cmd event
-            if not paused and content.startswith("spawn "):
-                spawn_cmd = content[len("spawn "):]
-                result.append(json.dumps([ts, "cmd", spawn_cmd]))
-            continue
+    filter_d = FilterDirective(dp, tp)
+    record_d = RecordDirective(dp, tp)
+    expect_d = ExpectDirective(dp, tp, filter_apply=filter_d.apply)
+    mock_d = MockDirective(dp, tp)
+    sc_d = ScDirective(dp, tp)
+    directives = [record_d, mock_d, expect_d, filter_d, sc_d]
 
-        trace_marker = f"{tp} "
-        if content.startswith(trace_marker):
-            rest = content[len(trace_marker):]
+    out: list[str] = []
 
-            if rest.startswith("source ") or rest.startswith(". "):
-                continue
-            if rest == "expect" or rest.startswith("expect "):
-                skip_next = True  # skip subsequent "spawn ..." line
-                continue
-
-            sc_prefix = f": {dp} "
-            if rest.startswith(sc_prefix):
-                parts = rest[len(sc_prefix):].split()
-                if not parts:
-                    continue
-                name = parts[0].lower()
-                args = parts[1:]
-
-                if name == "mark" and args[:1] == ["mock"]:
-                    skip_next = True
-                    continue
-                if name == "mark" and args[:1] == ["input"]:
-                    if not paused:
-                        input_text = " ".join(args[1:])
-                        result.append(json.dumps([ts, "input", input_text]))
-                        pending_echo = input_text
-                    continue
-                if name == "record":
-                    if args[:1] == ["pause"]:
-                        paused = True
-                    elif args[:1] == ["resume"]:
-                        paused = False
-                    continue
-                if name == "filter":
-                    if args[:1] == ["sed"]:
-                        try:
-                            filters = [_compile_sed_filter(" ".join(args[1:]))]
-                        except ValueError:
-                            filters = []
-                    continue
-                if name == "filter-add":
-                    if args[:1] == ["sed"]:
-                        try:
-                            filters.append(_compile_sed_filter(" ".join(args[1:])))
-                        except ValueError:
-                            pass
-                    continue
-
-                if not paused:
-                    result.append(json.dumps([ts, "directive", " ".join([name] + args)]))
-                continue
-
-            if not paused:
-                result.append(json.dumps([ts, "cmd", rest]))
-
+    while queue:
+        for d in directives:
+            result = d.post(queue)
+            if result is not None:
+                out.extend(result)
+                break
         else:
-            m = mark_input_re.match(content)
-            if m:
-                prefix = m.group(1)  # preserve trailing space (e.g. "mysql> ")
-                input_text = m.group(2).strip()
-                if not paused:
-                    if prefix.strip():
-                        result.append(json.dumps([ts, "output", apply_filters(prefix)]))
-                    # Delay input event: wait to see if next line is a pty echo
-                    pending_input_marker = input_text
-                continue
-            if not paused:
-                if pending_input_marker is not None:
-                    marker = pending_input_marker
-                    pending_input_marker = None
-                    if content.rstrip("\r") == marker:
-                        # pty echo found — use echo text as input value, skip line
-                        result.append(json.dumps([ts, "input", marker]))
-                        continue
-                    else:
-                        # no pty echo (silent/password) — emit silent input
-                        result.append(json.dumps([ts, "input", ""]))
-                        if not content.rstrip("\r"):
-                            continue  # blank line is send_user \n artifact, not real output
-                        # fall through to emit non-blank content as output
-                elif pending_echo is not None:
-                    if content.rstrip("\r") == pending_echo:
-                        pending_echo = None
-                        continue
-                    pending_echo = None
-                result.append(json.dumps([ts, "output", apply_filters(content)]))
+            ts, content = queue.popleft()
+            if content.startswith(trace_marker):
+                out.append(json.dumps([ts, "cmd", content[len(trace_marker):]]))
+            else:
+                out.append(json.dumps([ts, "output", content]))
 
-    # Flush any pending input at end of stream (silent — no pty echo found)
-    if pending_input_marker is not None and not paused:
-        result.append(json.dumps([ts, "input", ""]))
-
-    return "\n".join(result) + ("\n" if result else "")
+    return "\n".join(out) + ("\n" if out else "")
 
 
 def record(

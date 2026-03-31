@@ -1,9 +1,11 @@
 # scriptcast/generator.py
 from __future__ import annotations
 import json
+from collections import deque
 from pathlib import Path
 
 from .config import ScriptcastConfig
+from .directives import SetDirective, SleepDirective
 
 
 def generate_from_sc(
@@ -147,23 +149,25 @@ def _render_scene_lines(
     lines: list[str] = []
     cursor = initial_cursor
     active = config.copy()
+    registry = {"set": SetDirective(), "sleep": SleepDirective()}
 
     lines.append(json.dumps([round(cursor, 6), "o", "\x1b[2J\x1b[H"]))
     if active.show_title:
         lines.append(json.dumps([round(cursor, 6), "o", f"{scene_name}\r\n"]))
     cursor += active.enter_wait / 1000.0
 
-    for i, (_, typ, text) in enumerate(events):
-        next_typ = events[i + 1][1] if i + 1 < len(events) else None
+    queue: deque[tuple] = deque(events)
+    while queue:
+        event = queue.popleft()
+        _, typ, text = event
 
         if typ == "directive":
             parts = text.split()
-            name = parts[0]
-            args = parts[1:]
-            if name == "set" and len(args) >= 2:
-                active.apply("set", args)
-            elif name == "sleep" and args:
-                cursor += int(args[0]) / 1000.0
+            name = parts[0] if parts else ""
+            d = registry.get(name)
+            if d is not None:
+                cursor, new_lines = d.gen(event, queue, active, cursor)
+                lines.extend(new_lines)
 
         elif typ == "cmd":
             lines.append(json.dumps([round(cursor, 6), "o", active.prompt]))
@@ -175,19 +179,18 @@ def _render_scene_lines(
             cursor += active.cmd_wait / 1000.0
 
         elif typ == "output":
-            # Don't add \r\n if the next event is input (input will continue on same line)
+            next_typ = queue[0][1] if queue else None
             suffix = "" if next_typ == "input" else "\r\n"
             lines.append(json.dumps([round(cursor, 6), "o", text + suffix]))
 
         elif typ == "input":
+            # Always add \r\n after input (Enter was pressed, visible or silent)
             cursor += active.input_wait / 1000.0
             for char in text:
                 cursor += active.type_speed / 1000.0
                 lines.append(json.dumps([round(cursor, 6), "o", char]))
-            # Always add \r\n after input (Enter was pressed, visible or silent)
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
     cursor += active.exit_wait / 1000.0
     lines.append(json.dumps([round(cursor, 6), "o", ""]))
-
     return lines, cursor
