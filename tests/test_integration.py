@@ -35,7 +35,7 @@ def test_basic_example_end_to_end_split_mode(tmp_path):
 
     cast_files = sorted(tmp_path.glob("*.cast"))
     names = {f.stem for f in cast_files}
-    assert names == {"intro", "mock", "expect", "filter"}
+    assert names == {"intro", "mock", "expect", "filter", "comment"}
 
 
 def test_basic_example_record_stage(tmp_path):

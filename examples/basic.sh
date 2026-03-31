@@ -57,3 +57,11 @@ EOF
 
 echo "Project root:"
 pwd
+
+# ----------------------------------------
+# Scene — Comment
+# ----------------------------------------
+: SC scene comment
+
+: SC '\' This is a comment
+echo "Comments appear as cmd events in the cast"

@@ -15,7 +15,7 @@ from .config import ScriptcastConfig
 from .shell import get_adapter
 from .directives import (
     RecorderDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective,
-    ScDirective,
+    ScDirective, CommentDirective,
 )
 
 
@@ -59,7 +59,11 @@ def _postprocess(
     expect_d = ExpectDirective(dp, tp, filter_apply=filter_d.apply)
     mock_d = MockDirective(dp, tp)
     sc_d = ScDirective(dp, tp)
-    directives = [record_d, mock_d, expect_d, filter_d, sc_d]
+    comment_d = CommentDirective(dp, tp)
+    # expect_d must precede filter_d: expect_d owns all lines inside an expect session,
+    # preventing filter_d from double-applying the filter to those lines.
+    # comment_d must precede sc_d: sc_d is a catch-all for any `: SC` line.
+    directives = [record_d, mock_d, expect_d, filter_d, comment_d, sc_d]
 
     out: list[str] = []
 

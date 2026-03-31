@@ -1,5 +1,5 @@
 from collections import deque
-from scriptcast.directives import Directive, RecorderDirective, GeneratorDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective, ScDirective, SetDirective, SleepDirective
+from scriptcast.directives import Directive, RecorderDirective, GeneratorDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective, ScDirective, SetDirective, SleepDirective, CommentDirective
 from scriptcast.config import ScriptcastConfig
 import json
 
@@ -261,6 +261,27 @@ def test_filter_directive_apply_identity_when_empty():
     assert d.apply("unchanged") == "unchanged"
 
 
+def test_filter_directive_uses_real_command():
+    """Filter should run any command as a subprocess, not just sed."""
+    d = FilterDirective()
+    d.post(deque([(1.0, "+ : SC filter tr 'a-z' 'A-Z'")]))
+    assert d.apply("hello") == "HELLO"
+
+
+def test_filter_directive_failed_command_returns_empty():
+    """A command that produces no stdout returns empty string without crashing."""
+    d = FilterDirective()
+    d.post(deque([(1.0, "+ : SC filter false")]))
+    assert d.apply("anything") == ""
+
+
+def test_filter_directive_command_not_found_returns_empty():
+    """A command not found on PATH returns empty string without crashing."""
+    d = FilterDirective()
+    d.post(deque([(1.0, "+ : SC filter __nonexistent_command_xyz__")]))
+    assert d.apply("anything") == ""
+
+
 def test_filter_directive_transforms_output_in_place():
     d = FilterDirective()
     # Set up filter
@@ -380,3 +401,42 @@ def test_sc_directive_custom_prefix():
     q = deque([(1.0, ">> : MY scene intro")])
     result = sc_d.post(q)
     assert result == [json.dumps([1.0, "directive", "scene intro"])]
+
+
+def test_comment_directive_emits_cmd_with_text():
+    d = CommentDirective()
+    q = deque([(1.0, "+ : SC '\\' This is a comment")])
+    result = d.post(q)
+    assert result == [json.dumps([1.0, "cmd", "# This is a comment"])]
+    assert len(q) == 0
+
+
+def test_comment_directive_emits_cmd_no_text():
+    d = CommentDirective()
+    q = deque([(1.0, "+ : SC '\\'")])
+    result = d.post(q)
+    assert result == [json.dumps([1.0, "cmd", "#"])]
+    assert len(q) == 0
+
+
+def test_comment_directive_returns_none_for_non_comment():
+    d = CommentDirective()
+    q = deque([(1.0, "+ : SC scene intro")])
+    result = d.post(q)
+    assert result is None
+    assert len(q) == 1
+
+
+def test_comment_directive_returns_none_for_output_line():
+    d = CommentDirective()
+    q = deque([(1.0, "plain output")])
+    result = d.post(q)
+    assert result is None
+    assert len(q) == 1
+
+
+def test_comment_directive_custom_prefix():
+    d = CommentDirective(dp="MY", tp=">>")
+    q = deque([(1.0, ">> : MY '\\' hello")])
+    result = d.post(q)
+    assert result == [json.dumps([1.0, "cmd", "# hello"])]

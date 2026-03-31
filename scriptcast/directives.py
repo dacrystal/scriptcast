@@ -1,29 +1,14 @@
 from __future__ import annotations
 import json
 import re
+import shlex
+import subprocess
 from collections import deque
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .config import ScriptcastConfig
 
-
-def _compile_sed_filter(expr: str):
-    """Compile a sed s/pattern/replacement/flags expression to a Python callable."""
-    if len(expr) >= 2 and expr[0] in ('"', "'") and expr[-1] == expr[0]:
-        expr = expr[1:-1]
-    if not expr.startswith("s"):
-        raise ValueError(f"Only s/// sed expressions are supported, got: {expr!r}")
-    delim = expr[1]
-    parts = expr[2:].split(delim)
-    if len(parts) < 2:
-        raise ValueError(f"Cannot parse sed expression: {expr!r}")
-    pattern, replacement = parts[0], parts[1]
-    flags_str = parts[2] if len(parts) > 2 else ""
-    re_flags = re.IGNORECASE if "i" in flags_str else 0
-    count = 0 if "g" in flags_str else 1
-    compiled = re.compile(pattern, re_flags)
-    return lambda text: compiled.sub(replacement, text, count=count)
 
 
 class Directive:
@@ -228,7 +213,7 @@ class ExpectDirective(RecorderDirective):
 class FilterDirective(RecorderDirective):
     def __init__(self, dp: str = "SC", tp: str = "+"):
         super().__init__(dp, tp)
-        self._filters: list = []
+        self._filters: list[list[str]] = []
 
     def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
         ts, content = queue[0]
@@ -244,21 +229,23 @@ class FilterDirective(RecorderDirective):
                 queue[0] = (ts, self.apply(content))
             return None
         queue.popleft()
-        parts = rest.split()
-        if parts[:1] == ["sed"]:
-            try:
-                fn = _compile_sed_filter(" ".join(parts[1:]))
-            except ValueError:
-                return []
-            if name == "filter":
-                self._filters = [fn]
-            else:
-                self._filters.append(fn)
+        argv = shlex.split(rest)
+        if not argv:
+            return []
+        if name == "filter":
+            self._filters = [argv]
+        else:
+            self._filters.append(argv)
         return []
 
     def apply(self, text: str) -> str:
-        for fn in self._filters:
-            text = fn(text)
+        # One subprocess per filter per line — acceptable for typical recording sizes.
+        for argv in self._filters:
+            try:
+                result = subprocess.run(argv, input=text, capture_output=True, text=True)
+                text = result.stdout.rstrip("\n")
+            except OSError:
+                text = ""
         return text
 
 
@@ -286,6 +273,27 @@ class ScDirective(RecorderDirective):
         if rest:
             return [json.dumps([ts, "directive", rest])]
         return []
+
+
+class CommentDirective(RecorderDirective):
+    """Matches `: SC '\' comment` trace lines and emits [ts, "cmd", "# comment"].
+
+    Script syntax: `: SC '\' This is a comment`
+    Bash traces as: `+ : SC '\' This is a comment`
+    """
+
+    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
+        ts, content = queue[0]
+        prefix = f"{self.tp} : {self.dp} '\\' "
+        bare = f"{self.tp} : {self.dp} '\\'"
+        if content.startswith(prefix):
+            rest = content[len(prefix):]
+            queue.popleft()
+            return [json.dumps([ts, "cmd", f"# {rest}"])]
+        if content == bare:
+            queue.popleft()
+            return [json.dumps([ts, "cmd", "#"])]
+        return None
 
 
 class SetDirective(GeneratorDirective):
