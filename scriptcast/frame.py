@@ -189,6 +189,34 @@ def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
     return result
 
 
+def _build_global_palette(
+    template_rgb: PILImage,
+    rgb_canvases: list[PILImage],
+    max_samples: int = 20,
+) -> PILImage:
+    """Build a shared P-mode palette image from the template + sampled content frames.
+
+    Samples up to max_samples evenly-distributed frames so that the palette covers
+    both static chrome colors and the range of terminal ANSI colors.
+    """
+    from PIL import Image
+
+    n = len(rgb_canvases)
+    if max_samples <= 1 or n <= max_samples:
+        indices = list(range(n))
+    else:
+        indices = [int(round(i * (n - 1) / (max_samples - 1))) for i in range(max_samples)]
+
+    sampled = [rgb_canvases[i] for i in indices]
+    w, h = template_rgb.size
+    # Stack template + sampled frames vertically for palette derivation
+    composite = Image.new("RGB", (w, h * (1 + len(sampled))))
+    composite.paste(template_rgb, (0, 0))
+    for idx, frame in enumerate(sampled):
+        composite.paste(frame, (0, h * (idx + 1)))
+    return composite.quantize(colors=256)
+
+
 def apply_frame(gif_path: Path, config: FrameConfig) -> None:
     """Post-process a GIF in-place: add background, shadow, window chrome, and optional watermark.
 
@@ -196,6 +224,7 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
     """
     try:
         from PIL import Image
+        from PIL.Image import Dither
     except ImportError:
         raise RuntimeError(
             "Pillow is required for frame overlay. "
@@ -232,11 +261,20 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
     template = _apply_title_bar(template, window_x, window_y, window_w, config)
     template = _apply_watermark(template, config)
 
-    out_frames = []
+    template_rgb = template.convert("RGB")
+
+    # Pass 1 — build all RGB canvases
+    rgb_canvases = []
     for raw in raw_frames:
         canvas = template.copy()
         canvas.paste(raw, (content_x, content_y))
-        out_frames.append(canvas.convert("RGB").quantize(colors=256))
+        rgb_canvases.append(canvas.convert("RGB"))
+
+    # Derive a single shared palette from template + sampled frames
+    palette_ref = _build_global_palette(template_rgb, rgb_canvases)
+
+    # Pass 2 — quantize every frame with the shared palette (no dithering)
+    out_frames = [frame.quantize(palette=palette_ref, dither=Dither.NONE) for frame in rgb_canvases]
 
     out_frames[0].save(
         gif_path,

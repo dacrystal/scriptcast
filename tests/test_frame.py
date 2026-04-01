@@ -273,3 +273,138 @@ def test_apply_frame_missing_pillow(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="Pillow"):
         apply_frame(gif_path, FrameConfig())
+
+
+def test_build_global_palette_returns_p_mode_image():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.frame import _build_global_palette
+
+    template = Image.new("RGB", (100, 50), (30, 30, 30))
+    frames = [Image.new("RGB", (100, 50), (i * 10, 0, 0)) for i in range(5)]
+    palette_ref = _build_global_palette(template, frames)
+
+    assert palette_ref.mode == "P"
+
+
+def test_build_global_palette_samples_at_most_max_samples():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.frame import _build_global_palette
+
+    # Build 50 frames; helper should still return without error and produce P-mode image
+    template = Image.new("RGB", (40, 20), (30, 30, 30))
+    frames = [Image.new("RGB", (40, 20), (i % 255, i % 255, i % 255)) for i in range(50)]
+    palette_ref = _build_global_palette(template, frames, max_samples=20)
+
+    assert palette_ref.mode == "P"
+
+
+def test_build_global_palette_single_frame():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.frame import _build_global_palette
+
+    template = Image.new("RGB", (40, 20), (30, 30, 30))
+    frames = [Image.new("RGB", (40, 20), (200, 100, 50))]
+    palette_ref = _build_global_palette(template, frames)
+
+    assert palette_ref.mode == "P"
+
+
+def _make_colorful_gif(path, width=160, height=80):
+    """Create a 2-frame GIF with thousands of distinct colors to stress palette quantization.
+
+    Frame 1 and Frame 2 have different color gradients, so independent per-frame
+    quantization would produce different optimal palettes.
+    """
+    from PIL import Image
+
+    data1 = bytes(
+        val
+        for y in range(height)
+        for x in range(width)
+        for val in ((x * 3) % 256, (y * 3) % 256, ((x + y) * 2) % 256)
+    )
+    f1 = Image.frombytes("RGB", (width, height), data1)
+
+    data2 = bytes(
+        val
+        for y in range(height)
+        for x in range(width)
+        for val in ((x * 3 + 100) % 256, (y * 3 + 50) % 256, ((x + y) * 2 + 150) % 256)
+    )
+    f2 = Image.frombytes("RGB", (width, height), data2)
+
+    f1.quantize(colors=256).save(
+        path, save_all=True, append_images=[f2.quantize(colors=256)], duration=100, loop=0
+    )
+
+
+def test_apply_frame_palette_is_shared(tmp_path):
+    """Stable locations (title bar / window chrome) must have identical pixels across frames."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import TITLE_BAR_HEIGHT, apply_frame
+
+    gif_path = tmp_path / "test.gif"
+    _make_colorful_gif(gif_path, width=160, height=80)
+    config = FrameConfig(margin_x=10, margin_y=10, padding_x=8, padding_y=4, shadow=False, radius=0)
+    apply_frame(gif_path, config)
+
+    img = Image.open(gif_path)
+    # Sample a pixel in the title bar (right side, away from traffic lights)
+    # This region is always _WINDOW_BG (#1E1E1E) and must be identical across frames
+    stable_x = 10 + 120   # well inside window width, right side of title bar
+    stable_y = 10 + TITLE_BAR_HEIGHT // 2  # vertical center of title bar
+
+    frame_pixels = []
+    try:
+        while True:
+            frame_pixels.append(img.convert("RGB").getpixel((stable_x, stable_y)))
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+
+    assert len(frame_pixels) == 2
+    assert frame_pixels[0] == frame_pixels[1], (
+        f"title bar color changed between frames: {frame_pixels}"
+    )
+
+
+def test_apply_frame_traffic_light_color_stable(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _TRAFFIC_LIGHTS, TITLE_BAR_HEIGHT, apply_frame
+
+    gif_path = tmp_path / "test.gif"
+    _make_colorful_gif(gif_path, width=160, height=80)
+    config = FrameConfig(
+        margin_x=10, margin_y=10, padding_x=8, padding_y=4, shadow=False, radius=0
+    )
+    apply_frame(gif_path, config)
+
+    img = Image.open(gif_path)
+    window_x = 10
+    y_center = 10 + TITLE_BAR_HEIGHT // 2
+    red_light_x = window_x + _TRAFFIC_LIGHTS[0][0]
+
+    pixel_per_frame = []
+    try:
+        while True:
+            pixel_per_frame.append(img.convert("RGB").getpixel((red_light_x, y_center)))
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+
+    assert len(pixel_per_frame) == 2
+    assert pixel_per_frame[0] == pixel_per_frame[1], (
+        f"red traffic light color changed between frames: {pixel_per_frame}"
+    )
