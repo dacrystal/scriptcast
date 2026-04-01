@@ -315,6 +315,23 @@ def test_build_global_palette_single_frame():
     assert palette_ref.mode == "P"
 
 
+def test_build_global_palette_chrome_colors_exact():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.frame import _CHROME_COLORS, _build_global_palette
+
+    template = Image.new("RGB", (100, 50), (30, 30, 30))
+    frames = [Image.new("RGB", (100, 50), (i * 10, 200, 100)) for i in range(5)]
+    palette_ref = _build_global_palette(template, frames)
+
+    raw = palette_ref.getpalette()  # R,G,B per slot; length varies with content variety
+    for i, (r, g, b) in enumerate(_CHROME_COLORS):
+        assert raw[i * 3] == r, f"slot {i} R mismatch"
+        assert raw[i * 3 + 1] == g, f"slot {i} G mismatch"
+        assert raw[i * 3 + 2] == b, f"slot {i} B mismatch"
+
+
 def _make_colorful_gif(path, width=160, height=80):
     """Create a 2-frame GIF with thousands of distinct colors to stress palette quantization.
 

@@ -33,6 +33,12 @@ def _hex_rgba(hex_color: str) -> tuple[int, int, int, int]:
     return (r, g, b, a)
 
 
+_CHROME_COLORS: list[tuple[int, int, int]] = (
+    [_hex_rgba(c)[:3] for _, c in _TRAFFIC_LIGHTS]
+    + [_hex_rgba(_WINDOW_BG)[:3], _hex_rgba(_TITLE_COLOR)[:3]]
+)
+
+
 def _resolve_margins(config: FrameConfig) -> tuple[int, int]:
     """Resolve None margins to their automatic default based on whether a background is set."""
     auto = 82 if config.background is not None else 0
@@ -214,7 +220,14 @@ def _build_global_palette(
     composite.paste(template_rgb, (0, 0))
     for idx, frame in enumerate(sampled):
         composite.paste(frame, (0, h * (idx + 1)))
-    return composite.quantize(colors=256)
+    n_chrome = len(_CHROME_COLORS)
+    content_ref = composite.quantize(colors=256 - n_chrome)
+    chrome_bytes = b"".join(bytes(c) for c in _CHROME_COLORS)
+    raw_palette = content_ref.getpalette() or []
+    content_bytes = bytes(raw_palette[: (256 - n_chrome) * 3])
+    palette_img = Image.new("P", (1, 1))
+    palette_img.putpalette(chrome_bytes + content_bytes)
+    return palette_img
 
 
 def apply_frame(gif_path: Path, config: FrameConfig) -> None:
