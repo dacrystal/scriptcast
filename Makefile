@@ -1,4 +1,4 @@
-.PHONY: lint typecheck test all install-tools
+.PHONY: lint typecheck test changelog all install-tools
 
 # ── CI / quality ────────────────────────────────────────────────────────────
 
@@ -10,6 +10,9 @@ typecheck:
 
 test:
 	pytest --cov=scriptcast --cov-report=term-missing
+
+changelog:
+	git cliff --unreleased --tag HEAD -o CHANGELOG.md
 
 all: lint typecheck test
 
