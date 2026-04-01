@@ -53,7 +53,7 @@ EOF
 # ----------------------------------------
 : SC scene filter
 
-: SC filter sed 's#/workspaces/scriptcast#<project>#g'
+: SC filter sed "s#$PWD#<project>#g"
 
 echo "Project root:"
 pwd

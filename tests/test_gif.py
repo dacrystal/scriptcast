@@ -40,6 +40,7 @@ def _make_tiny_gif(path, width=40, height=20):
 def test_apply_frame_overlay_increases_height(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.gif import TITLE_BAR_HEIGHT, apply_frame_overlay
 
     gif_path = tmp_path / "test.gif"
@@ -53,6 +54,7 @@ def test_apply_frame_overlay_increases_height(tmp_path):
 def test_apply_frame_overlay_preserves_width(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.gif import apply_frame_overlay
 
     gif_path = tmp_path / "test.gif"
@@ -66,6 +68,7 @@ def test_apply_frame_overlay_preserves_width(tmp_path):
 def test_apply_frame_overlay_missing_pillow(tmp_path, monkeypatch):
     import builtins
     import sys
+
     from scriptcast.gif import apply_frame_overlay
 
     gif_path = tmp_path / "test.gif"
@@ -96,19 +99,24 @@ def test_gif_command_frame_option(tmp_path):
 
     from scriptcast.__main__ import cli
 
-    sc_content = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    sc_content = (
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    )
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(sc_content)
     fake_cast = tmp_path / "demo.cast"
     fake_gif = tmp_path / "demo.gif"
 
     runner = CliRunner()
-    with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]) as mock_gen:
-        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
+        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
             with patch("scriptcast.__main__.apply_frame_overlay") as mock_overlay:
                 result = runner.invoke(
                     cli,
-                    ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame", "macos", "--frame-title", "Demo"],
+                    [
+                        "gif", str(sc_file), "--output-dir", str(tmp_path),
+                        "--frame", "macos", "--frame-title", "Demo",
+                    ],
                 )
     assert result.exit_code == 0, result.output
     mock_overlay.assert_called_once_with(fake_gif, style="macos", title="Demo")
@@ -123,7 +131,9 @@ def test_gif_command_no_frame_skips_overlay(tmp_path):
 
     from scriptcast.__main__ import cli
 
-    sc_content = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    sc_content = (
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    )
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(sc_content)
     fake_cast = tmp_path / "demo.cast"
@@ -150,7 +160,9 @@ def test_gif_command_frame_overlay_error_is_clean(tmp_path):
 
     from scriptcast.__main__ import cli
 
-    sc_content = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    sc_content = (
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    )
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(sc_content)
     fake_cast = tmp_path / "demo.cast"
@@ -159,7 +171,10 @@ def test_gif_command_frame_overlay_error_is_clean(tmp_path):
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
         with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
-            with patch("scriptcast.__main__.apply_frame_overlay", side_effect=RuntimeError("Pillow not installed")):
+            with patch(
+                "scriptcast.__main__.apply_frame_overlay",
+                side_effect=RuntimeError("Pillow not installed"),
+            ):
                 result = runner.invoke(
                     cli,
                     ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame", "macos"],

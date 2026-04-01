@@ -4,7 +4,10 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 
-_INT_KEYS = {"type_speed", "cmd_wait", "input_wait", "exit_wait", "width", "height", "enter_wait", "word_speed"}
+_INT_KEYS = {
+    "type_speed", "cmd_wait", "input_wait", "exit_wait",
+    "width", "height", "enter_wait", "word_speed",
+}
 _STR_KEYS = {"theme", "prompt", "directive_prefix", "trace_prefix"}
 _BOOL_KEYS = {"show_title", "split_scenes"}
 
