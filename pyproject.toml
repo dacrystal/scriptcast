@@ -53,5 +53,9 @@ warn_unused_ignores = true
 warn_return_any = true
 disallow_untyped_defs = true
 
+[[tool.mypy.overrides]]
+module = ["PIL", "PIL.*"]
+ignore_missing_imports = true
+
 # Entry-point group for third-party directives. See DIRECTIVES.md.
 [project.entry-points."scriptcast.directives"]
