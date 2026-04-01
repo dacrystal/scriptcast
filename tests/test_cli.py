@@ -1,7 +1,6 @@
 # tests/test_cli.py
-import os
-from pathlib import Path
 from click.testing import CliRunner
+
 from scriptcast.__main__ import cli
 
 
@@ -24,7 +23,9 @@ def test_generate_subcommand(tmp_path):
         + _json.dumps([1.2, "output", "hi"]) + "\n"
     )
     runner = CliRunner()
-    result = runner.invoke(cli, ["generate", str(sc), "--output-dir", str(tmp_path), "--split-scenes"])
+    result = runner.invoke(
+        cli, ["generate", str(sc), "--output-dir", str(tmp_path), "--split-scenes"]
+    )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "main.cast").exists()
 
@@ -33,7 +34,7 @@ def test_end_to_end(tmp_path):
     script = tmp_path / "demo.sh"
     script.write_text(": SC scene demo\necho hello\n")
     runner = CliRunner()
-    result = runner.invoke(cli, [str(script), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(script)])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "demo.cast").exists()
 
@@ -68,7 +69,7 @@ def test_split_scenes_flag_produces_per_scene_files(tmp_path):
     )
     runner = CliRunner()
     result = runner.invoke(
-        cli, [str(script), "--output-dir", str(tmp_path), "--split-scenes"]
+        cli, ["--output-dir", str(tmp_path), "--split-scenes", str(script)]
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "alpha.cast").exists()
@@ -83,7 +84,43 @@ def test_default_single_cast_output(tmp_path):
         ": SC scene beta\necho b\n"
     )
     runner = CliRunner()
-    result = runner.invoke(cli, [str(script), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(script)])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "demo.cast").exists()
     assert not (tmp_path / "alpha.cast").exists()
+
+
+def test_options_before_script_path(tmp_path):
+    """Options placed before the script path are parsed correctly."""
+    script = tmp_path / "demo.sh"
+    script.write_text(": SC scene demo\necho hello\n")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--output-dir", str(tmp_path), "--split-scenes", str(script)],
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "demo.cast").exists()
+
+
+def test_no_args_prints_help():
+    runner = CliRunner()
+    result = runner.invoke(cli, [])
+    assert result.exit_code == 0
+    assert "Usage" in result.output
+
+
+def test_nonexistent_script_errors(tmp_path):
+    runner = CliRunner()
+    result = runner.invoke(cli, [str(tmp_path / "nope.sh")])
+    assert result.exit_code != 0
+
+
+def test_extra_args_after_script_errors(tmp_path):
+    """Extra positional args after the script path produce a clear error."""
+    script = tmp_path / "demo.sh"
+    script.write_text("echo hello\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, [str(script), "extra"])
+    assert result.exit_code != 0
+    assert "Unexpected arguments" in result.output

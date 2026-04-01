@@ -2,7 +2,9 @@
 """Integration test using examples/basic.sh as a real end-to-end fixture."""
 import json
 from pathlib import Path
+
 from click.testing import CliRunner
+
 from scriptcast.__main__ import cli
 
 BASIC_SCRIPT = Path(__file__).parent.parent / "examples" / "basic.sh"
@@ -11,7 +13,7 @@ BASIC_SCRIPT = Path(__file__).parent.parent / "examples" / "basic.sh"
 def test_basic_example_end_to_end(tmp_path):
     """examples/basic.sh produces a single basic.cast with valid asciinema v2 header."""
     runner = CliRunner()
-    result = runner.invoke(cli, [str(BASIC_SCRIPT), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(BASIC_SCRIPT)])
     assert result.exit_code == 0, result.output
 
     cast_file = tmp_path / "basic.cast"
@@ -29,7 +31,7 @@ def test_basic_example_end_to_end_split_mode(tmp_path):
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        [str(BASIC_SCRIPT), "--output-dir", str(tmp_path), "--split-scenes"],
+        ["--output-dir", str(tmp_path), "--split-scenes", str(BASIC_SCRIPT)],
     )
     assert result.exit_code == 0, result.output
 
@@ -56,16 +58,16 @@ def test_basic_example_record_stage(tmp_path):
 def test_basic_example_mock_scene_shows_command(tmp_path):
     """`basic.cast` contains the mock deploy command as a typed command trace."""
     runner = CliRunner()
-    result = runner.invoke(cli, [str(BASIC_SCRIPT), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(BASIC_SCRIPT)])
     assert result.exit_code == 0, result.output
 
     cast_file = tmp_path / "basic.cast"
     content = cast_file.read_text()
     # "deploy" should appear as typed output (the mock command)
     all_text = "".join(
-        json.loads(l)[2]
-        for l in content.splitlines()[1:]
-        if l.strip()
+        json.loads(ln)[2]
+        for ln in content.splitlines()[1:]
+        if ln.strip()
     )
     assert "deploy" in all_text
     assert "Deploying to production" in all_text
@@ -74,7 +76,7 @@ def test_basic_example_mock_scene_shows_command(tmp_path):
 def test_basic_example_filter_applied(tmp_path):
     """`basic.cast` must not contain the raw working directory path."""
     runner = CliRunner()
-    result = runner.invoke(cli, [str(BASIC_SCRIPT), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(BASIC_SCRIPT)])
     assert result.exit_code == 0, result.output
 
     cast_file = tmp_path / "basic.cast"

@@ -29,7 +29,26 @@ scriptcast = "scriptcast.__main__:cli"
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "ruff>=0.4",
+    "mypy>=1.10",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = true
+
+# Entry-point group for third-party directives. See DIRECTIVES.md.
+[project.entry-points."scriptcast.directives"]

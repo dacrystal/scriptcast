@@ -1,49 +1,61 @@
 from __future__ import annotations
+
 import json
 import re
 import shlex
 import subprocess
 from collections import deque
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .config import ScriptcastConfig
 
 
-
 class Directive:
+    priority: int = 50
+    handles: str | None = None  # gen-phase: directive name matched in .sc events
+
     def __init__(self, dp: str = "SC", tp: str = "+"):
         self.dp = dp
         self.tp = tp
 
     def pre(self, queue: deque[str]) -> list[str] | None:
-        """Pre-phase. Peek queue[0]; return None if not this directive's line."""
+        """Pre-phase: rewrite script lines before shell execution.
+
+        Peek queue[0]; consume lines and return replacement lines, or return
+        None if this directive does not match the current line.
+        """
         return None
 
     def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        """Post-phase. Peek queue[0]; return None if not this directive's item."""
+        """Post-phase: transform raw xtrace lines into JSONL .sc events.
+
+        Peek queue[0]; consume lines and return JSONL strings, or return
+        None if this directive does not match the current line.
+        Return [] to consume lines without emitting output.
+        """
         return None
 
     def gen(
         self,
         event: tuple,
         queue: deque[tuple],
-        active: "ScriptcastConfig",
+        active: ScriptcastConfig,
         cursor: float,
     ) -> tuple[float, list[str]]:
-        """Gen-phase: emit cast lines for a directive event. Default: no output."""
+        """Gen-phase: emit cast lines for a directive event.
+
+        Called when a 'directive' event is found in the .sc file and this
+        directive's `handles` matches the directive name. Return updated
+        cursor and list of JSON cast lines.
+        """
         return cursor, []
 
 
-class RecorderDirective(Directive):
-    """Directive that participates in pre and/or post phases."""
+class MockDirective(Directive):
+    priority = 20
 
-
-class GeneratorDirective(Directive):
-    """Directive that participates in the gen phase."""
-
-
-class MockDirective(RecorderDirective):
     def __init__(self, dp: str = "SC", tp: str = "+"):
         super().__init__(dp, tp)
         self._mock_re = re.compile(
@@ -62,8 +74,6 @@ class MockDirective(RecorderDirective):
             body.append(queue.popleft())
         closing = queue.popleft() if queue else delim + "\n"
         return [
-            # Always use single quotes for the heredoc delimiter - mock body is static data,
-            # so variable expansion doesn't apply regardless of original quote style
             f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<'{delim}'\n",
             *body,
             closing,
@@ -79,8 +89,12 @@ class MockDirective(RecorderDirective):
         return []
 
 
-class ExpectDirective(RecorderDirective):
-    def __init__(self, dp: str = "SC", tp: str = "+", filter_apply=None):
+class ExpectDirective(Directive):
+    priority = 30
+
+    def __init__(
+        self, dp: str = "SC", tp: str = "+", filter_apply: Callable[[str], str] | None = None
+    ):
         super().__init__(dp, tp)
         self._filter_apply = filter_apply or (lambda t: t)
         self._expect_re = re.compile(
@@ -137,6 +151,9 @@ class ExpectDirective(RecorderDirective):
             events: list[str] = [json.dumps([ts, "cmd", cmd])]
             while queue:
                 line_ts, rest = queue[0]
+                # mark input FIRST — before the termination check.
+                # Lines like ": SC mark input text" (empty output prefix) would otherwise
+                # match the ": SC ..." termination check and escape the session.
                 mi = self._mark_input_re.match(rest)
                 if mi:
                     queue.popleft()
@@ -154,15 +171,12 @@ class ExpectDirective(RecorderDirective):
         queue.popleft()
         cmd = content[len(prefix_str):].strip()
 
-        events: list[str] = []
+        events = []
         events.append(json.dumps([ts, "cmd", cmd]))
 
         while queue:
-            line_ts, rest = queue[0]  # peek
+            line_ts, rest = queue[0]
 
-            # mark input FIRST — before the termination check.
-            # Lines like ": SC mark input text" (empty output prefix) would otherwise
-            # match the ": SC ..." termination check and escape the session.
             mi = self._mark_input_re.match(rest)
             if mi:
                 queue.popleft()
@@ -190,9 +204,8 @@ class ExpectDirective(RecorderDirective):
         queue: deque[tuple[float, str]],
         events: list[str],
         line_ts: float,
-        mi,
+        mi: re.Match[str],
     ) -> None:
-        """Pop and process a mark-input match from the queue into events."""
         prefix_out = mi.group(1)
         input_text = mi.group(2).strip()
         if prefix_out.strip():
@@ -205,12 +218,14 @@ class ExpectDirective(RecorderDirective):
             else:
                 events.append(json.dumps([line_ts, "input", ""]))
                 if not next_rest.rstrip("\r"):
-                    queue.popleft()  # blank send_user artifact
+                    queue.popleft()
         else:
             events.append(json.dumps([line_ts, "input", ""]))
 
 
-class FilterDirective(RecorderDirective):
+class FilterDirective(Directive):
+    priority = 40
+
     def __init__(self, dp: str = "SC", tp: str = "+"):
         super().__init__(dp, tp)
         self._filters: list[list[str]] = []
@@ -224,7 +239,6 @@ class FilterDirective(RecorderDirective):
         elif content.startswith(sc_filter_add):
             name, rest = "filter-add", content[len(sc_filter_add):]
         else:
-            # Plain output line — apply filter transform in-place, let else-branch emit it
             if not content.startswith(f"{self.tp} "):
                 queue[0] = (ts, self.apply(content))
             return None
@@ -239,7 +253,6 @@ class FilterDirective(RecorderDirective):
         return []
 
     def apply(self, text: str) -> str:
-        # One subprocess per filter per line — acceptable for typical recording sizes.
         for argv in self._filters:
             try:
                 result = subprocess.run(argv, input=text, capture_output=True, text=True)
@@ -249,7 +262,9 @@ class FilterDirective(RecorderDirective):
         return text
 
 
-class RecordDirective(RecorderDirective):
+class RecordDirective(Directive):
+    priority = 10
+
     def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
         ts, content = queue[0]
         if content != f"{self.tp} : {self.dp} record pause":
@@ -262,7 +277,9 @@ class RecordDirective(RecorderDirective):
         return []
 
 
-class ScDirective(RecorderDirective):
+class ScDirective(Directive):
+    priority = 99  # catch-all — must run last
+
     def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
         ts, content = queue[0]
         prefix = f"{self.tp} : {self.dp} "
@@ -275,12 +292,13 @@ class ScDirective(RecorderDirective):
         return []
 
 
-class CommentDirective(RecorderDirective):
-    """Matches `: SC '\' comment` trace lines and emits [ts, "cmd", "# comment"].
+class CommentDirective(Directive):
+    """Matches `: SC '\\' comment` trace lines and emits [ts, "cmd", "# comment"].
 
-    Script syntax: `: SC '\' This is a comment`
-    Bash traces as: `+ : SC '\' This is a comment`
+    Script syntax: `: SC '\\' This is a comment`
+    Bash traces as: `+ : SC '\\' This is a comment`
     """
+    priority = 45  # must precede ScDirective (catch-all)
 
     def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
         ts, content = queue[0]
@@ -296,34 +314,38 @@ class CommentDirective(RecorderDirective):
         return None
 
 
-class SetDirective(GeneratorDirective):
+class SetDirective(Directive):
+    priority = 50  # gen-only; ordering relative to SleepDirective is irrelevant
+    handles = "set"
+
     def gen(
         self,
         event: tuple,
         queue: deque[tuple],
-        active: "ScriptcastConfig",
+        active: ScriptcastConfig,
         cursor: float,
     ) -> tuple[float, list[str]]:
         _, _, text = event
         parts = text.split()
-        # parts: ["set", key, value, ...]
         args = parts[1:]
         if len(args) >= 2:
             active.apply("set", args)
         return cursor, []
 
 
-class SleepDirective(GeneratorDirective):
+class SleepDirective(Directive):
+    priority = 50
+    handles = "sleep"
+
     def gen(
         self,
         event: tuple,
         queue: deque[tuple],
-        active: "ScriptcastConfig",
+        active: ScriptcastConfig,
         cursor: float,
     ) -> tuple[float, list[str]]:
         _, _, text = event
         parts = text.split()
-        # parts: ["sleep", ms]
         if len(parts) >= 2:
             cursor += int(parts[1]) / 1000.0
         return cursor, []

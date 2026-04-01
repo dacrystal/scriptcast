@@ -1,6 +1,7 @@
 # scriptcast/shell/adapter.py
 from abc import ABC, abstractmethod
 
+
 class ShellAdapter(ABC):
     @property
     @abstractmethod

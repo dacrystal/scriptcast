@@ -1,7 +1,6 @@
 # tests/test_generator.py
 import json
-import pytest
-from pathlib import Path
+
 from scriptcast.generator import generate_from_sc, generate_from_sc_text
 
 
@@ -27,8 +26,8 @@ def _zero_sc(*events):
 
 
 def _cast(path):
-    lines = [l for l in path.read_text().strip().splitlines() if l]
-    return json.loads(lines[0]), [json.loads(l) for l in lines[1:]]
+    lines = [ln for ln in path.read_text().strip().splitlines() if ln]
+    return json.loads(lines[0]), [json.loads(ln) for ln in lines[1:]]
 
 
 def test_cast_header_version(tmp_path):

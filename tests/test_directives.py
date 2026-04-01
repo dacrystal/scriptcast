@@ -1,7 +1,18 @@
-from collections import deque
-from scriptcast.directives import Directive, RecorderDirective, GeneratorDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective, ScDirective, SetDirective, SleepDirective, CommentDirective
-from scriptcast.config import ScriptcastConfig
 import json
+from collections import deque
+
+from scriptcast.config import ScriptcastConfig
+from scriptcast.directives import (
+    CommentDirective,
+    Directive,
+    ExpectDirective,
+    FilterDirective,
+    MockDirective,
+    RecordDirective,
+    ScDirective,
+    SetDirective,
+    SleepDirective,
+)
 
 
 def test_directive_pre_returns_none():
@@ -440,3 +451,35 @@ def test_comment_directive_custom_prefix():
     q = deque([(1.0, ">> : MY '\\' hello")])
     result = d.post(q)
     assert result == [json.dumps([1.0, "cmd", "# hello"])]
+
+
+def test_directive_has_priority():
+    d = Directive()
+    assert isinstance(d.priority, int)
+
+
+def test_directive_has_handles_none_by_default():
+    d = Directive()
+    assert d.handles is None
+
+
+def test_set_directive_handles_set():
+    d = SetDirective()
+    assert d.handles == "set"
+
+
+def test_sleep_directive_handles_sleep():
+    d = SleepDirective()
+    assert d.handles == "sleep"
+
+
+def test_record_directive_priority_lower_than_sc():
+    assert RecordDirective().priority < ScDirective().priority
+
+
+def test_expect_directive_priority_lower_than_filter():
+    assert ExpectDirective().priority < FilterDirective().priority
+
+
+def test_comment_directive_priority_lower_than_sc():
+    assert CommentDirective().priority < ScDirective().priority

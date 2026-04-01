@@ -1,6 +1,7 @@
 # tests/test_config.py
 from scriptcast.config import ScriptcastConfig
 
+
 def test_defaults():
     c = ScriptcastConfig()
     assert c.type_speed == 40

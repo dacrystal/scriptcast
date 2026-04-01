@@ -1,6 +1,7 @@
 # scriptcast/shell/bash.py
 from .adapter import ShellAdapter
 
+
 class BashAdapter(ShellAdapter):
     @property
     def name(self) -> str:

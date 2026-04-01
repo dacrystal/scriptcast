@@ -1,11 +1,12 @@
 # scriptcast/generator.py
 from __future__ import annotations
+
 import json
 from collections import deque
 from pathlib import Path
 
 from .config import ScriptcastConfig
-from .directives import SetDirective, SleepDirective
+from .registry import build_directives
 
 
 def generate_from_sc(
@@ -149,7 +150,10 @@ def _render_scene_lines(
     lines: list[str] = []
     cursor = initial_cursor
     active = config.copy()
-    registry = {"set": SetDirective(), "sleep": SleepDirective()}
+    # Build gen registry: directive name → directive instance
+    # Uses handles attribute; directives without handles are recorder-only.
+    all_directives = build_directives(active.directive_prefix, active.trace_prefix)
+    gen_registry = {d.handles: d for d in all_directives if d.handles is not None}
 
     lines.append(json.dumps([round(cursor, 6), "o", "\x1b[2J\x1b[H"]))
     if active.show_title:
@@ -164,7 +168,7 @@ def _render_scene_lines(
         if typ == "directive":
             parts = text.split()
             name = parts[0] if parts else ""
-            d = registry.get(name)
+            d = gen_registry.get(name)
             if d is not None:
                 cursor, new_lines = d.gen(event, queue, active, cursor)
                 lines.extend(new_lines)

@@ -1,10 +1,11 @@
 # tests/test_recorder.py
 import json
 import shutil
+
 import pytest
-from pathlib import Path
-from scriptcast.recorder import record, _preprocess, _postprocess
+
 from scriptcast.config import ScriptcastConfig
+from scriptcast.recorder import _postprocess, _preprocess, record
 
 
 def test_record_creates_sc_file(tmp_path):
@@ -36,7 +37,7 @@ def test_sc_file_contains_output_event(tmp_path):
     script.write_text("echo scriptcast_test_marker\n")
     sc_path = tmp_path / "demo.sc"
     record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
-    events = [json.loads(l) for l in sc_path.read_text().splitlines()[1:] if l.strip()]
+    events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
     assert any(e[1] == "output" and "scriptcast_test_marker" in e[2] for e in events)
 
 
@@ -76,7 +77,7 @@ def test_preprocess_mock_rewrites_directive():
     assert ": SC mock" not in result
     # Verify only one closing "EOF\n" (not multiple)
     lines = result.split('\n')
-    eof_lines = [l for l in lines if l == 'EOF']
+    eof_lines = [ln for ln in lines if ln == 'EOF']
     assert len(eof_lines) == 1
 
 
@@ -141,12 +142,12 @@ def test_preprocess_expect_prepends_spawn():
     result = _preprocess(script)
     lines = result.splitlines()
     # First line after expect <<'EOF' should be spawn
-    eof_idx = next(i for i, l in enumerate(lines) if l.startswith("expect <<"))
+    eof_idx = next(i for i, ln in enumerate(lines) if ln.startswith("expect <<"))
     assert lines[eof_idx + 1] == "spawn myapp arg1 arg2"
 
 
 def _parse_sc_events(sc_text):
-    return [json.loads(l) for l in sc_text.splitlines() if l.strip()]
+    return [json.loads(ln) for ln in sc_text.splitlines() if ln.strip()]
 
 
 def test_postprocess_emits_cmd_event():
@@ -316,7 +317,7 @@ def test_record_mock_directive_produces_cmd_and_output_events(tmp_path):
     script.write_text(": SC mock deploy <<'EOF'\nDeploying...\nEOF\n")
     sc_path = tmp_path / "demo.sc"
     record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
-    events = [json.loads(l) for l in sc_path.read_text().splitlines()[1:] if l.strip()]
+    events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
     assert any(e[1] == "cmd" and "deploy" in e[2] for e in events)
     assert any(e[1] == "output" and "Deploying..." in e[2] for e in events)
     assert not any("mark mock" in e[2] for e in events)

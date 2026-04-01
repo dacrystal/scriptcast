@@ -1,16 +1,16 @@
 # scriptcast/gif.py
 from __future__ import annotations
+
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Union
 
 
 class AggNotFoundError(RuntimeError):
     pass
 
 
-def generate_gif(cast_path: Union[str, Path]) -> Path:
+def generate_gif(cast_path: str | Path) -> Path:
     """Convert a .cast file to .gif using agg. Returns the .gif path.
 
     Raises AggNotFoundError if agg is not installed.

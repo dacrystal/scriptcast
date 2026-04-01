@@ -1,27 +1,23 @@
 # scriptcast/recorder.py
 from __future__ import annotations
+
 import json
 import os
-import re
 import subprocess
 import tempfile
 import time
 import warnings
 from collections import deque
 from pathlib import Path
-from typing import Union
 
 from .config import ScriptcastConfig
+from .registry import build_directives
 from .shell import get_adapter
-from .directives import (
-    RecorderDirective, MockDirective, ExpectDirective, FilterDirective, RecordDirective,
-    ScDirective, CommentDirective,
-)
 
 
 def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
     """Rewrite SC mock/expect directives to executable shell before recording."""
-    directives = [MockDirective(directive_prefix), ExpectDirective(directive_prefix)]
+    directives = build_directives(directive_prefix)
     queue: deque[str] = deque(script_text.splitlines(keepends=True))
     out: list[str] = []
     while queue:
@@ -41,7 +37,6 @@ def _postprocess(
     directive_prefix: str = "SC",
 ) -> str:
     """Convert raw .log text to JSONL .sc body (no header line)."""
-    dp = directive_prefix
     tp = trace_prefix
     trace_marker = f"{tp} "
 
@@ -54,17 +49,7 @@ def _postprocess(
             continue
         queue.append((ts_val, content.rstrip("\n\r")))
 
-    filter_d = FilterDirective(dp, tp)
-    record_d = RecordDirective(dp, tp)
-    expect_d = ExpectDirective(dp, tp, filter_apply=filter_d.apply)
-    mock_d = MockDirective(dp, tp)
-    sc_d = ScDirective(dp, tp)
-    comment_d = CommentDirective(dp, tp)
-    # expect_d must precede filter_d: expect_d owns all lines inside an expect session,
-    # preventing filter_d from double-applying the filter to those lines.
-    # comment_d must precede sc_d: sc_d is a catch-all for any `: SC` line.
-    directives = [record_d, mock_d, expect_d, filter_d, comment_d, sc_d]
-
+    directives = build_directives(directive_prefix, trace_prefix)
     out: list[str] = []
 
     while queue:
@@ -84,8 +69,8 @@ def _postprocess(
 
 
 def record(
-    script_path: Union[str, Path],
-    sc_path: Union[str, Path],
+    script_path: str | Path,
+    sc_path: str | Path,
     config: ScriptcastConfig,
     shell: str,
 ) -> int:
@@ -122,7 +107,7 @@ def record(
             cwd=script_path.parent,
         )
         raw_lines: list[str] = []
-        for line in proc.stdout:
+        for line in proc.stdout:  # type: ignore[union-attr]
             ts = time.time()
             raw_lines.append(f"{ts:.3f} {line}")
         proc.wait()

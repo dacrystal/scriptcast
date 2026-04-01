@@ -1,9 +1,10 @@
 # tests/test_gif.py
-import subprocess
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
-from scriptcast.gif import generate_gif, AggNotFoundError
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from scriptcast.gif import AggNotFoundError, generate_gif
 
 
 def test_generate_gif_calls_agg(tmp_path):

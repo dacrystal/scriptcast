@@ -1,8 +1,10 @@
 # tests/test_shell.py
 import pytest
+
 from scriptcast.shell import get_adapter
 from scriptcast.shell.bash import BashAdapter
 from scriptcast.shell.zsh import ZshAdapter
+
 
 def test_get_bash():
     assert isinstance(get_adapter("bash"), BashAdapter)

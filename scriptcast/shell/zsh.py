@@ -1,6 +1,7 @@
 # scriptcast/shell/zsh.py
 from .adapter import ShellAdapter
 
+
 class ZshAdapter(ShellAdapter):
     @property
     def name(self) -> str:
