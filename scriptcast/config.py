@@ -48,3 +48,34 @@ class ScriptcastConfig:
         """Pause to insert after each space when typing, in seconds."""
         ms = self.word_speed if self.word_speed is not None else self.type_speed
         return ms / 1000.0
+
+
+@dataclass
+class FrameConfig:
+    # Window title text; empty = no title rendered
+    title: str = ""
+
+    # Inner padding between agg content and window edge
+    padding_x: int = 14
+    padding_y: int = 14
+
+    # Window appearance
+    radius: int = 12
+    border_color: str = "#ffffff30"   # RGBA hex
+    border_width: int = 1
+
+    # Outer background (None = no background, no margin)
+    background: str | None = None     # "#hex" or "#hex1,#hex2" gradient
+    margin_x: int | None = None       # None = auto (0 if no bg, 82 if bg set)
+    margin_y: int | None = None       # None = auto (0 if no bg, 82 if bg set)
+
+    # Drop shadow (only drawn when frame is active)
+    shadow: bool = True
+    shadow_color: str = "#0000004d"   # RGBA hex
+    shadow_radius: int = 20
+    shadow_offset_y: int = 21
+
+    # Watermark (opt-in — omit or set to None to skip)
+    watermark: str | None = None
+    watermark_color: str = "#ffffff"
+    watermark_size: int | None = None  # None = auto (≈11% of canvas width, clamped 20–30px)

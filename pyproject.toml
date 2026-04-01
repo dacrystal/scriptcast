@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "asciinema>=2.4.0",
     "click>=8.0",
 ]
 

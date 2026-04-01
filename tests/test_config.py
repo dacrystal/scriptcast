@@ -74,3 +74,32 @@ def test_apply_word_speed():
     c = ScriptcastConfig()
     c.apply("set", ["word_speed", "80"])
     assert c.word_speed == 80
+
+
+def test_frame_config_defaults():
+    from scriptcast.config import FrameConfig
+    c = FrameConfig()
+    assert c.title == ""
+    assert c.padding_x == 14
+    assert c.padding_y == 14
+    assert c.radius == 12
+    assert c.border_color == "#ffffff30"
+    assert c.border_width == 1
+    assert c.background is None
+    assert c.margin_x is None
+    assert c.margin_y is None
+    assert c.shadow is True
+    assert c.shadow_color == "#0000004d"
+    assert c.shadow_radius == 20
+    assert c.shadow_offset_y == 21
+    assert c.watermark is None
+    assert c.watermark_color == "#ffffff"
+    assert c.watermark_size is None
+
+
+def test_frame_config_custom():
+    from scriptcast.config import FrameConfig
+    c = FrameConfig(title="Demo", background="#1a1a2e,#16213e", watermark="hello")
+    assert c.title == "Demo"
+    assert c.background == "#1a1a2e,#16213e"
+    assert c.watermark == "hello"

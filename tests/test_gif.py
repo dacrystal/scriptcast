@@ -27,157 +27,135 @@ def test_missing_agg_raises():
             generate_gif(Path("scene.cast"))
 
 
-def _make_tiny_gif(path, width=40, height=20):
-    """Create a minimal 2-frame GIF for testing."""
-    from PIL import Image
-    frame1 = Image.new("RGB", (width, height), (30, 30, 30))
-    frame2 = Image.new("RGB", (width, height), (40, 40, 40))
-    q1 = frame1.quantize(colors=256)
-    q2 = frame2.quantize(colors=256)
-    q1.save(path, save_all=True, append_images=[q2], duration=100, loop=0)
+def test_generate_gif_calls_apply_frame_when_config_provided(tmp_path):
+    """When frame_config is passed, generate_gif calls frame.apply_frame."""
+    from scriptcast.config import FrameConfig
+
+    cast_file = tmp_path / "scene.cast"
+    cast_file.write_text('{"version":2}\n')
+    gif_file = tmp_path / "scene.gif"
+    config = FrameConfig()
+
+    def fake_run(*args: object, **kwargs: object) -> MagicMock:
+        gif_file.write_bytes(b"GIF89a")
+        return MagicMock(returncode=0)
+
+    with patch("shutil.which", return_value="/usr/bin/agg"):
+        with patch("subprocess.run", side_effect=fake_run):
+            with patch("scriptcast.frame.apply_frame") as mock_apply:
+                generate_gif(cast_file, config)
+
+    mock_apply.assert_called_once_with(gif_file, config)
 
 
-def test_apply_frame_overlay_increases_height(tmp_path):
-    pytest.importorskip("PIL")
-    from PIL import Image
+def test_generate_gif_skips_apply_frame_when_no_config(tmp_path):
+    """Without frame_config, frame.apply_frame is never called."""
+    cast_file = tmp_path / "scene.cast"
+    cast_file.write_text('{"version":2}\n')
 
-    from scriptcast.gif import TITLE_BAR_HEIGHT, apply_frame_overlay
+    with patch("shutil.which", return_value="/usr/bin/agg"):
+        with patch("subprocess.run"):
+            with patch("scriptcast.frame.apply_frame") as mock_apply:
+                try:
+                    generate_gif(cast_file)
+                except Exception:
+                    pass
 
-    gif_path = tmp_path / "test.gif"
-    _make_tiny_gif(gif_path, width=40, height=20)
-    apply_frame_overlay(gif_path, style="macos")
-
-    result = Image.open(gif_path)
-    assert result.height == 20 + TITLE_BAR_HEIGHT
-
-
-def test_apply_frame_overlay_preserves_width(tmp_path):
-    pytest.importorskip("PIL")
-    from PIL import Image
-
-    from scriptcast.gif import apply_frame_overlay
-
-    gif_path = tmp_path / "test.gif"
-    _make_tiny_gif(gif_path, width=40, height=20)
-    apply_frame_overlay(gif_path, style="macos")
-
-    result = Image.open(gif_path)
-    assert result.width == 40
+    mock_apply.assert_not_called()
 
 
-def test_apply_frame_overlay_missing_pillow(tmp_path, monkeypatch):
-    import builtins
-    import sys
-
-    from scriptcast.gif import apply_frame_overlay
-
-    gif_path = tmp_path / "test.gif"
-    gif_path.write_bytes(b"GIF89a")
-
-    real_import = builtins.__import__
-
-    def mock_import(name, *args, **kwargs):
-        if name.startswith("PIL"):
-            raise ImportError("No module named 'PIL'")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", mock_import)
-    for key in list(sys.modules):
-        if key.startswith("PIL"):
-            monkeypatch.delitem(sys.modules, key)
-
-    with pytest.raises(RuntimeError, match="Pillow"):
-        apply_frame_overlay(gif_path)
-
-
-def test_gif_command_frame_option(tmp_path):
-    """--frame macos calls apply_frame_overlay after each gif is generated."""
+def _sc_content() -> str:
     import json
-    from unittest.mock import patch
+    return json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
 
+
+def test_gif_command_frame_passes_config(tmp_path):
+    """--frame builds a FrameConfig and passes it to generate_gif."""
     from click.testing import CliRunner
 
     from scriptcast.__main__ import cli
 
-    sc_content = (
-        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
-    )
     sc_file = tmp_path / "demo.sc"
-    sc_file.write_text(sc_content)
+    sc_file.write_text(_sc_content())
     fake_cast = tmp_path / "demo.cast"
     fake_gif = tmp_path / "demo.gif"
 
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
-        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
-            with patch("scriptcast.__main__.apply_frame_overlay") as mock_overlay:
-                result = runner.invoke(
-                    cli,
-                    [
-                        "gif", str(sc_file), "--output-dir", str(tmp_path),
-                        "--frame", "macos", "--frame-title", "Demo",
-                    ],
-                )
+        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
+            result = runner.invoke(
+                cli,
+                ["gif", str(sc_file), "--output-dir", str(tmp_path),
+                 "--frame", "--title", "Demo", "--background", "#1a1a2e"],
+            )
     assert result.exit_code == 0, result.output
-    mock_overlay.assert_called_once_with(fake_gif, style="macos", title="Demo")
+    frame_config = mock_gif.call_args[0][1]
+    assert frame_config is not None
+    assert frame_config.title == "Demo"
+    assert frame_config.background == "#1a1a2e"
+    assert frame_config.shadow is True  # default when --frame
 
 
-def test_gif_command_no_frame_skips_overlay(tmp_path):
-    """Without --frame, apply_frame_overlay is not called."""
-    import json
-    from unittest.mock import patch
-
+def test_gif_command_no_frame_passes_none(tmp_path):
+    """Without --frame, generate_gif receives frame_config=None."""
     from click.testing import CliRunner
 
     from scriptcast.__main__ import cli
 
-    sc_content = (
-        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
-    )
     sc_file = tmp_path / "demo.sc"
-    sc_file.write_text(sc_content)
+    sc_file.write_text(_sc_content())
     fake_cast = tmp_path / "demo.cast"
     fake_gif = tmp_path / "demo.gif"
 
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
-        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
-            with patch("scriptcast.__main__.apply_frame_overlay") as mock_overlay:
-                result = runner.invoke(
-                    cli,
-                    ["gif", str(sc_file), "--output-dir", str(tmp_path)],
-                )
+        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
+            result = runner.invoke(cli, ["gif", str(sc_file), "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    mock_overlay.assert_not_called()
+    assert mock_gif.call_args[0][1] is None
 
 
-def test_gif_command_frame_overlay_error_is_clean(tmp_path):
-    """RuntimeError from apply_frame_overlay (e.g. missing Pillow) gives a clean CLI error."""
-    import json
-    from unittest.mock import patch
-
+def test_gif_command_no_shadow_flag(tmp_path):
+    """--no-shadow sets shadow=False on FrameConfig."""
     from click.testing import CliRunner
 
     from scriptcast.__main__ import cli
 
-    sc_content = (
-        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
-    )
     sc_file = tmp_path / "demo.sc"
-    sc_file.write_text(sc_content)
+    sc_file.write_text(_sc_content())
     fake_cast = tmp_path / "demo.cast"
     fake_gif = tmp_path / "demo.gif"
 
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
-        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
-            with patch(
-                "scriptcast.__main__.apply_frame_overlay",
-                side_effect=RuntimeError("Pillow not installed"),
-            ):
-                result = runner.invoke(
-                    cli,
-                    ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame", "macos"],
-                )
+        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
+            result = runner.invoke(
+                cli,
+                ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame", "--no-shadow"],
+            )
+    assert result.exit_code == 0, result.output
+    assert mock_gif.call_args[0][1].shadow is False
+
+
+def test_gif_command_frame_error_is_clean(tmp_path):
+    """RuntimeError from generate_gif (e.g. missing Pillow) gives a clean CLI error."""
+    from click.testing import CliRunner
+
+    from scriptcast.__main__ import cli
+
+    sc_file = tmp_path / "demo.sc"
+    sc_file.write_text(_sc_content())
+    fake_cast = tmp_path / "demo.cast"
+
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
+        with patch(
+            "scriptcast.__main__.generate_gif",
+            side_effect=RuntimeError("Pillow not installed"),
+        ):
+            result = runner.invoke(
+                cli,
+                ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame"],
+            )
     assert result.exit_code == 1
     assert "Pillow not installed" in result.output

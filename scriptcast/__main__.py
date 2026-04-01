@@ -10,7 +10,7 @@ import click
 
 from .config import ScriptcastConfig
 from .generator import generate_from_sc
-from .gif import AggNotFoundError, apply_frame_overlay, generate_gif
+from .gif import AggNotFoundError, generate_gif
 from .recorder import record as do_record
 
 
@@ -163,24 +163,59 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
 @cli.command()
 @click.argument("sc_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
-@click.option("--frame", default="none", type=click.Choice(["none", "macos"]), show_default=True)
-@click.option("--frame-title", default="", show_default=False)
-def gif(sc_file: str, output_dir: str | None, frame: str, frame_title: str) -> None:
+@click.option("--frame/--no-frame", default=False, help="Add macOS window frame decoration.")
+@click.option("--title", default="", show_default=False, help="Window title text.")
+@click.option("--background", default=None, help="Background color: '#hex' or '#hex1,#hex2' gradient.")  # noqa: E501
+@click.option("--margin", default=None, type=int, help="Outer margin in pixels (default: 82 when --background set).")  # noqa: E501
+@click.option("--padding", default=None, type=int, help="Inner padding in pixels (default: 14).")
+@click.option("--radius", default=12, show_default=True, type=int, help="Window corner radius.")
+@click.option("--shadow/--no-shadow", default=True, help="Drop shadow behind window; only applies with --frame.")  # noqa: E501
+@click.option("--shadow-color", default="#0000004d", show_default=True, help="Shadow color (RGBA hex).")  # noqa: E501
+@click.option("--watermark", default=None, help="Watermark text (opt-in).")
+@click.option("--watermark-color", default="#ffffff", show_default=True, help="Watermark color.")
+def gif(
+    sc_file: str,
+    output_dir: str | None,
+    frame: bool,
+    title: str,
+    background: str | None,
+    margin: int | None,
+    padding: int | None,
+    radius: int,
+    shadow: bool,
+    shadow_color: str,
+    watermark: str | None,
+    watermark_color: str,
+) -> None:
     """Generate GIFs from .cast files using agg."""
+    from .config import FrameConfig
+
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
+
+    frame_config: FrameConfig | None = None
+    if frame:
+        frame_config = FrameConfig(
+            title=title,
+            background=background,
+            margin_x=margin,
+            margin_y=margin,
+            padding_x=padding if padding is not None else 14,
+            padding_y=padding if padding is not None else 14,
+            radius=radius,
+            shadow=shadow,
+            shadow_color=shadow_color,
+            watermark=watermark,
+            watermark_color=watermark_color,
+        )
+
     for cast_path in paths:
         try:
-            gif_path = generate_gif(cast_path)
-        except AggNotFoundError as e:
+            gif_path = generate_gif(cast_path, frame_config)
+        except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
-        if frame != "none":
-            try:
-                apply_frame_overlay(gif_path, style=frame, title=frame_title)
-            except RuntimeError as e:
-                raise click.ClickException(str(e))
         click.echo(f"Generated: {gif_path}")
 
 
