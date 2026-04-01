@@ -32,6 +32,9 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+gif = [
+    "pillow>=9.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

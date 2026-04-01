@@ -155,3 +155,49 @@ def test_generate_from_sc_reads_file(tmp_path):
     paths = generate_from_sc(sc_file, out)
     _, cast = _cast(paths[0])
     assert "echo hello" in "".join(e[2] for e in cast)
+
+
+def test_word_speed_adds_pause_between_words(tmp_path):
+    # "echo hello world" has 2 spaces → 2 word pauses of 200ms each = 400ms
+    sc = _make_sc(
+        ("directive", "set type_speed 0"),
+        ("directive", "set cmd_wait 0"),
+        ("directive", "set exit_wait 0"),
+        ("directive", "set enter_wait 0"),
+        ("directive", "set word_speed 200"),
+        ("cmd", "echo hello world"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    assert max(e[0] for e in cast) >= 0.4
+
+
+def test_word_speed_none_mirrors_type_speed(tmp_path):
+    # word_speed=None → word pause = type_speed (100ms here); "a b" has 1 space
+    # chars: 'a' at 0.1, ' ' at 0.2 + word_pause 0.1 = 0.3, 'b' at 0.4, '\r\n' at 0.5
+    sc = _make_sc(
+        ("directive", "set type_speed 100"),
+        ("directive", "set cmd_wait 0"),
+        ("directive", "set exit_wait 0"),
+        ("directive", "set enter_wait 0"),
+        ("cmd", "a b"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    assert max(e[0] for e in cast) >= 0.5
+
+
+def test_word_speed_applies_to_input_events(tmp_path):
+    # "foo bar" has 1 space → 1 word pause of 300ms
+    sc = _make_sc(
+        ("directive", "set type_speed 0"),
+        ("directive", "set cmd_wait 0"),
+        ("directive", "set exit_wait 0"),
+        ("directive", "set enter_wait 0"),
+        ("directive", "set input_wait 0"),
+        ("directive", "set word_speed 300"),
+        ("input", "foo bar"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    assert max(e[0] for e in cast) >= 0.3

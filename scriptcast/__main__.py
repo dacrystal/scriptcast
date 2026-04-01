@@ -10,7 +10,7 @@ import click
 
 from .config import ScriptcastConfig
 from .generator import generate_from_sc
-from .gif import AggNotFoundError, generate_gif
+from .gif import AggNotFoundError, apply_frame_overlay, generate_gif
 from .recorder import record as do_record
 
 
@@ -163,7 +163,9 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
 @cli.command()
 @click.argument("sc_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
-def gif(sc_file: str, output_dir: str | None) -> None:
+@click.option("--frame", default="none", type=click.Choice(["none", "macos"]), show_default=True)
+@click.option("--frame-title", default="", show_default=False)
+def gif(sc_file: str, output_dir: str | None, frame: str, frame_title: str) -> None:
     """Generate GIFs from .cast files using agg."""
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
@@ -172,9 +174,14 @@ def gif(sc_file: str, output_dir: str | None) -> None:
     for cast_path in paths:
         try:
             gif_path = generate_gif(cast_path)
-            click.echo(f"Generated: {gif_path}")
         except AggNotFoundError as e:
             raise click.ClickException(str(e))
+        if frame != "none":
+            try:
+                apply_frame_overlay(gif_path, style=frame, title=frame_title)
+            except RuntimeError as e:
+                raise click.ClickException(str(e))
+        click.echo(f"Generated: {gif_path}")
 
 
 if __name__ == "__main__":

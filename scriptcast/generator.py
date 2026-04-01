@@ -178,6 +178,8 @@ def _render_scene_lines(
             for char in text:
                 cursor += active.type_speed / 1000.0
                 lines.append(json.dumps([round(cursor, 6), "o", char]))
+                if char == " ":
+                    cursor += active.effective_word_pause_s
             cursor += active.type_speed / 1000.0
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
             cursor += active.cmd_wait / 1000.0
@@ -193,6 +195,8 @@ def _render_scene_lines(
             for char in text:
                 cursor += active.type_speed / 1000.0
                 lines.append(json.dumps([round(cursor, 6), "o", char]))
+                if char == " ":
+                    cursor += active.effective_word_pause_s
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
     cursor += active.exit_wait / 1000.0

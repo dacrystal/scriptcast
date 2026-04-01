@@ -66,3 +66,11 @@ def test_apply_split_scenes_false():
     c.split_scenes = True
     c.apply("set", ["split_scenes", "false"])
     assert c.split_scenes is False
+
+def test_word_speed_default_is_none():
+    assert ScriptcastConfig().word_speed is None
+
+def test_apply_word_speed():
+    c = ScriptcastConfig()
+    c.apply("set", ["word_speed", "80"])
+    assert c.word_speed == 80

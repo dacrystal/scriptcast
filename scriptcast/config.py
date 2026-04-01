@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 
-_INT_KEYS = {"type_speed", "cmd_wait", "input_wait", "exit_wait", "width", "height", "enter_wait"}
+_INT_KEYS = {"type_speed", "cmd_wait", "input_wait", "exit_wait", "width", "height", "enter_wait", "word_speed"}
 _STR_KEYS = {"theme", "prompt", "directive_prefix", "trace_prefix"}
 _BOOL_KEYS = {"show_title", "split_scenes"}
 
@@ -15,6 +15,7 @@ class ScriptcastConfig:
     input_wait: int = 80      # ms to pause before typing an InputLine response
     exit_wait: int = 120      # ms after last output line of a command
     enter_wait: int = 80      # ms to pause at scene start, after clear and optional title
+    word_speed: int | None = None  # ms extra pause after each space; None = same as type_speed
     width: int = 100
     height: int = 28
     theme: str = "dark"
@@ -38,3 +39,9 @@ class ScriptcastConfig:
 
     def copy(self) -> ScriptcastConfig:
         return copy.copy(self)
+
+    @property
+    def effective_word_pause_s(self) -> float:
+        """Pause to insert after each space when typing, in seconds."""
+        ms = self.word_speed if self.word_speed is not None else self.type_speed
+        return ms / 1000.0
