@@ -1,6 +1,7 @@
 # scriptcast/frame.py
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,14 @@ try:
     from PIL.Image import Image as PILImage
 except ImportError:  # Pillow not installed — only used at runtime inside functions
     PILImage = object  # type: ignore[assignment,misc]
+
+# SVG rendering path (cairosvg). Falls back to PIL if cairosvg is absent.
+try:
+    import cairosvg as _cairosvg
+    _svg_available = True
+except (ImportError, OSError):
+    _cairosvg = None
+    _svg_available = False
 
 TITLE_BAR_HEIGHT = 28
 _PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
@@ -304,9 +313,13 @@ def _build_global_palette(
     return palette_img
 
 
-def apply_frame(gif_path: Path, config: FrameConfig) -> None:
+def apply_frame(gif_path: Path, config: FrameConfig, format: str = "gif") -> None:
     """Post-process a GIF in-place: add background, shadow, window chrome, and optional watermark.
 
+    When cairosvg is installed, uses SVG-based chrome rendering for superior quality.
+    Falls back to PIL drawing when cairosvg is unavailable.
+
+    format: "gif" writes .gif (quantized 256 colours); "apng" writes .png (full RGBA).
     Requires Pillow: pip install 'scriptcast[gif]'
     """
     try:
@@ -316,6 +329,12 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
         raise RuntimeError(
             "Pillow is required for frame overlay. "
             "Install with: pip install 'scriptcast[gif]'"
+        )
+
+    if format == "apng" and not _svg_available:
+        raise RuntimeError(
+            "APNG output requires cairosvg. "
+            "Install with: pip install 'scriptcast[gif]' (requires libcairo system library)."
         )
 
     mt, mr, mb, ml = _resolve_margin_sides(config)
@@ -338,10 +357,59 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
     canvas_h = window_h + mt + mb
     window_x = ml
     window_y = mt
+
+    output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
+
+    if _svg_available:
+        from . import svg_frame as _svg_frame
+
+        svg_str, (content_x, content_y, _cw, _ch) = _svg_frame.build_svg(
+            config, canvas_w, canvas_h, window_x, window_y, window_w, window_h
+        )
+        png_bytes = _cairosvg.svg2png(bytestring=svg_str.encode())
+        chrome = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+
+        rgba_canvases: list[Image.Image] = []
+        for raw in raw_frames:
+            canvas = chrome.copy()
+            canvas.paste(raw, (content_x, content_y))
+            canvas = _apply_watermark(canvas, config)
+            canvas = _apply_scriptcast_watermark(canvas, config)
+            rgba_canvases.append(canvas)
+
+        if format == "apng":
+            rgba_canvases[0].save(
+                output_path,
+                format="PNG",
+                save_all=True,
+                append_images=rgba_canvases[1:],
+                loop=0,
+                duration=durations,
+            )
+        else:
+            rgb_canvases = [c.convert("RGB") for c in rgba_canvases]
+            template_rgb = chrome.convert("RGB")
+            palette_ref = _build_global_palette(template_rgb, rgb_canvases)
+            out_frames = [
+                f.quantize(palette=palette_ref, dither=Dither.NONE)
+                for f in rgb_canvases
+            ]
+            out_frames[0].save(
+                output_path,
+                save_all=True,
+                append_images=out_frames[1:],
+                loop=0,
+                duration=durations,
+                optimize=False,
+            )
+        return
+
+    # ----------------------------------------------------------------
+    # PIL fallback path (used when cairosvg is not installed)
+    # ----------------------------------------------------------------
     content_x = window_x + config.padding_left
     content_y = window_y + TITLE_BAR_HEIGHT + config.padding_top
 
-    # Build template — background, shadow, window chrome (NO watermarks)
     template = _build_background(canvas_w, canvas_h, config)
     template = _apply_shadow(template, window_x, window_y, window_w, window_h, config)
     template = _apply_window_rect(template, window_x, window_y, window_w, window_h, config)
@@ -349,7 +417,6 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
 
     template_rgb = template.convert("RGB")
 
-    # Pass 1 — build all RGB canvases (watermarks applied AFTER paste so they appear on top)
     rgb_canvases = []
     for raw in raw_frames:
         canvas = template.copy()
@@ -358,12 +425,10 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
         canvas = _apply_scriptcast_watermark(canvas, config)
         rgb_canvases.append(canvas.convert("RGB"))
 
-    # Derive a single shared palette from template + sampled frames
     palette_ref = _build_global_palette(template_rgb, rgb_canvases)
-
-    # Pass 2 — quantize every frame with the shared palette (no dithering)
-    out_frames = [frame.quantize(palette=palette_ref, dither=Dither.NONE) for frame in rgb_canvases]
-
+    out_frames = [
+        frame.quantize(palette=palette_ref, dither=Dither.NONE) for frame in rgb_canvases
+    ]
     out_frames[0].save(
         gif_path,
         save_all=True,

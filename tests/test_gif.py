@@ -45,7 +45,7 @@ def test_generate_gif_calls_apply_frame_when_config_provided(tmp_path):
             with patch("scriptcast.frame.apply_frame") as mock_apply:
                 generate_gif(cast_file, config)
 
-    mock_apply.assert_called_once_with(gif_file, config)
+    mock_apply.assert_called_once_with(gif_file, config, format="gif")
 
 
 def test_generate_gif_skips_apply_frame_when_no_config(tmp_path):

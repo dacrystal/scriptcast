@@ -550,3 +550,207 @@ def test_scriptcast_watermark_text_is_scriptcast():
     """Watermark text is 'ScriptCast' (capital S and C)."""
     import scriptcast.frame as frame_mod
     assert frame_mod._WATERMARK_TEXT == "ScriptCast"
+
+
+# ---------------------------------------------------------------------------
+# SVG rendering path (cairosvg mocked)
+# ---------------------------------------------------------------------------
+
+def _make_fake_cairosvg(canvas_w: int, canvas_h: int):
+    """Return a fake cairosvg module whose svg2png returns a solid-grey RGBA PNG."""
+    import io
+    import re
+    import types
+
+    fake = types.ModuleType("cairosvg")
+
+    def svg2png(bytestring: bytes) -> bytes:  # noqa: ANN001
+        svg_str = bytestring.decode()
+        w = int(re.search(r'width="(\d+)"', svg_str).group(1))
+        h = int(re.search(r'height="(\d+)"', svg_str).group(1))
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGBA", (w, h), (30, 30, 30, 255)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    fake.svg2png = svg2png
+    return fake
+
+
+def test_apply_frame_svg_path_canvas_size(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import TITLE_BAR_HEIGHT, apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=100, height=60)
+
+    config = FrameConfig(
+        margin_top=50, margin_right=50, margin_bottom=50, margin_left=50,
+        padding_top=10, padding_right=10, padding_bottom=10, padding_left=10,
+        shadow=False,
+    )
+    apply_frame(gif_path, config)
+
+    result = Image.open(gif_path)
+    assert result.width == 100 + 2 * 10 + 2 * 50
+    assert result.height == 60 + 2 * 10 + TITLE_BAR_HEIGHT + 2 * 50
+
+
+def test_apply_frame_svg_path_preserves_frame_count(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=40, height=20)  # 2 frames
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ))
+
+    img = Image.open(gif_path)
+    count = 0
+    try:
+        while True:
+            count += 1
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+    assert count == 2
+
+
+def test_apply_frame_svg_path_watermark_over_content(tmp_path, monkeypatch):
+    """Watermark must appear on top of terminal content even in SVG path."""
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image as _Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    gif_path = tmp_path / "red.gif"
+    red = _Image.new("RGB", (300, 100), (255, 0, 0))
+    red.quantize(colors=256).save(gif_path, save_all=True, duration=100, loop=0)
+
+    config = FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=0, border_width=0,
+        scriptcast_watermark=True,
+    )
+    apply_frame(gif_path, config)
+
+    result = _Image.open(gif_path).convert("RGB")
+    corner_pixels = [result.getpixel((x, y)) for x in range(280, 300) for y in range(85, 100)]
+    assert any(r != 255 or g != 0 or b != 0 for r, g, b in corner_pixels), (
+        "Watermark pixels expected at bottom-right, all pixels were red"
+    )
+
+
+# ---------------------------------------------------------------------------
+# APNG output
+# ---------------------------------------------------------------------------
+
+def test_apply_frame_apng_writes_png_file(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=40, height=20)
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ), format="apng")
+
+    png_path = gif_path.with_suffix(".png")
+    assert png_path.exists(), "Expected .png file to be written for apng format"
+
+
+def test_apply_frame_apng_preserves_frame_count(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=40, height=20)  # 2 frames
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ), format="apng")
+
+    img = Image.open(gif_path.with_suffix(".png"))
+    count = 0
+    try:
+        while True:
+            count += 1
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+    assert count == 2
+
+
+def test_apply_frame_apng_is_full_color(tmp_path, monkeypatch):
+    """APNG frames must not be quantized — pixels retain full RGB values."""
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    # Bright red terminal frame — easy to detect if color is preserved
+    red = Image.new("RGB", (60, 40), (200, 50, 30))
+    gif_path = tmp_path / "red.gif"
+    red.quantize(colors=256).save(gif_path, duration=100, loop=0)
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=0, border_width=0,
+        scriptcast_watermark=False,
+    ), format="apng")
+
+    png_path = gif_path.with_suffix(".png")
+    result = Image.open(png_path).convert("RGB")
+    # Mode must be full color, not palette
+    assert result.mode in ("RGB", "RGBA"), f"Unexpected mode: {result.mode}"
+
+
+def test_apply_frame_apng_without_cairosvg_raises(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=40, height=20)
+
+    with pytest.raises(RuntimeError, match="APNG output requires cairosvg"):
+        apply_frame(gif_path, FrameConfig(), format="apng")

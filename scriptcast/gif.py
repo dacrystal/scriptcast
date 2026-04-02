@@ -15,15 +15,21 @@ class AggNotFoundError(Exception):
 
 
 def generate_gif(
-    cast_path: str | Path, frame_config: FrameConfig | None = None
+    cast_path: str | Path,
+    frame_config: FrameConfig | None = None,
+    format: str = "gif",
 ) -> Path:
-    """Convert a .cast file to .gif using agg. Returns the .gif path.
+    """Convert a .cast file to a GIF or APNG using agg. Returns the output path.
+
+    format: "gif" (default) writes .gif; "apng" writes .png (full RGBA, no quantization).
+    APNG output requires frame_config to be set; without a frame, format is ignored.
 
     Raises AggNotFoundError if agg is not installed.
     Install: https://github.com/asciinema/agg
 
     If frame_config is provided, applies frame decoration after agg finishes.
-    Requires Pillow: pip install 'scriptcast[gif]'
+    Requires Pillow (and cairosvg for SVG-quality chrome):
+        pip install 'scriptcast[gif]'
     """
     agg = shutil.which("agg")
     if agg is None:
@@ -33,7 +39,12 @@ def generate_gif(
     cast_path = Path(cast_path)
     gif_path = cast_path.with_suffix(".gif")
     subprocess.run([agg, str(cast_path), str(gif_path)], check=True)
+
     if frame_config is not None:
         from .frame import apply_frame
-        apply_frame(gif_path, frame_config)
-    return gif_path
+        apply_frame(gif_path, frame_config, format=format)
+        output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
+    else:
+        output_path = gif_path
+
+    return output_path

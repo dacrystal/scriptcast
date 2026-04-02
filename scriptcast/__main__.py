@@ -166,12 +166,20 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
 @click.option("--title", default="", show_default=False, help="Window title text.")
 @click.option("--watermark", default=None, help="Watermark text (opt-in).")
 @click.option("--theme", default=None, help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")  # noqa: E501
+@click.option(
+    "--format", "output_format",
+    default="gif",
+    type=click.Choice(["gif", "apng"]),
+    show_default=True,
+    help="Output format. 'apng' requires --frame macos for full-color output.",
+)
 def gif(
     sc_file: str,
     output_dir: str | None,
     title: str,
     watermark: str | None,
     theme: str | None,
+    output_format: str,
 ) -> None:
     """Generate GIFs from .cast files using agg."""
     from .config import FrameConfig, ScriptcastConfig
@@ -204,7 +212,7 @@ def gif(
     for cast_path in paths:
         try:
             use_frame = frame_config.frame == "macos"
-            gif_path = generate_gif(cast_path, frame_config if use_frame else None)
+            gif_path = generate_gif(cast_path, frame_config if use_frame else None, format=output_format)
             if not use_frame and frame_config.scriptcast_watermark:
                 from .frame import apply_scriptcast_watermark
                 apply_scriptcast_watermark(gif_path, frame_config)
