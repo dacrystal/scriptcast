@@ -53,9 +53,6 @@ class ScriptcastConfig:
 
 @dataclass
 class FrameConfig:
-    # Window title text; empty = no title rendered
-    title: str = ""
-
     # Inner padding — individual sides
     padding_top: int = 14
     padding_right: int = 14
@@ -76,16 +73,23 @@ class FrameConfig:
     margin_bottom: int | None = None
     margin_left: int | None = None
 
-    # Drop shadow (only drawn when frame is active)
+    # Drop shadow
     shadow: bool = True
     shadow_color: str = "#0000004d"   # RGBA hex
     shadow_radius: int = 20
     shadow_offset_y: int = 21
+    shadow_offset_x: int = 0
 
-    # Watermark (opt-in — omit or set to None to skip)
+    # Title bar
+    frame_bar: bool = True
+    frame_bar_title: str = ""
+    frame_bar_color: str = "#252535"
+    frame_bar_buttons: bool = True
+
+    # Watermark (opt-in)
     watermark: str | None = None
     watermark_color: str = "#ffffff"
-    watermark_size: int | None = None  # None = auto (≈11% of canvas width, clamped 20–30px)
+    watermark_size: int | None = None
 
     # Frame style
     frame: str = "none"               # "none" | "macos"

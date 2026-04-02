@@ -84,7 +84,7 @@ def test_apply_word_speed():
 def test_frame_config_defaults():
     from scriptcast.config import FrameConfig
     c = FrameConfig()
-    assert c.title == ""
+    assert c.frame_bar_title == ""
     # Individual padding sides
     assert c.padding_top == 14
     assert c.padding_right == 14
@@ -112,8 +112,8 @@ def test_frame_config_defaults():
 
 def test_frame_config_custom():
     from scriptcast.config import FrameConfig
-    c = FrameConfig(title="Demo", background="#1a1a2e,#16213e", watermark="hello")
-    assert c.title == "Demo"
+    c = FrameConfig(frame_bar_title="Demo", background="#1a1a2e,#16213e", watermark="hello")
+    assert c.frame_bar_title == "Demo"
     assert c.background == "#1a1a2e,#16213e"
     assert c.watermark == "hello"
 

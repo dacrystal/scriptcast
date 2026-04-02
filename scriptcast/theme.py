@@ -18,11 +18,11 @@ _SET_RE = re.compile(r":\s+SC\s+set\s+(\S+)\s+(.+?)\s*$")
 
 _INT_THEME_PROPS = {
     "radius", "border-width",
-    "shadow-radius", "shadow-offset-y", "watermark-size",
+    "shadow-radius", "shadow-offset-y", "shadow-offset-x", "watermark-size",
     "margin-top", "margin-right", "margin-bottom", "margin-left",
     "padding-top", "padding-right", "padding-bottom", "padding-left",
 }
-_BOOL_THEME_PROPS = {"shadow"}
+_BOOL_THEME_PROPS = {"shadow", "frame-bar", "frame-bar-buttons"}
 
 
 def _parse_css_shorthand(value: str) -> tuple[int, int, int, int]:

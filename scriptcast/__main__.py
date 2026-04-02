@@ -10,7 +10,7 @@ import click
 
 from .config import ScriptcastConfig
 from .generator import generate_from_sc
-from .gif import AggNotFoundError, generate_gif
+from .export import AggNotFoundError, generate_export
 from .recorder import record as do_record
 
 
@@ -163,9 +163,17 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
 @cli.command()
 @click.argument("sc_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
-@click.option("--title", default="", show_default=False, help="Window title text.")
+@click.option("--frame-bar-title", "frame_bar_title", default="",
+              help="Window title bar text.")
 @click.option("--watermark", default=None, help="Watermark text (opt-in).")
-@click.option("--theme", default=None, help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")  # noqa: E501
+@click.option("--theme", default=None,
+              help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")
+@click.option("--frame-bar/--no-frame-bar", default=True,
+              help="Show or hide the title bar.")
+@click.option("--frame-bar-color", default=None,
+              help="Title bar background color (hex).")
+@click.option("--frame-bar-buttons/--no-frame-bar-buttons", default=True,
+              help="Show or hide traffic-light buttons.")
 @click.option(
     "--format", "output_format",
     default="gif",
@@ -173,34 +181,42 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
     show_default=True,
     help="Output format. 'apng' requires --frame macos for full-color output.",
 )
-def gif(
+def export(
     sc_file: str,
     output_dir: str | None,
-    title: str,
+    frame_bar_title: str,
     watermark: str | None,
     theme: str | None,
+    frame_bar: bool,
+    frame_bar_color: str | None,
+    frame_bar_buttons: bool,
     output_format: str,
 ) -> None:
-    """Generate GIFs from .cast files using agg."""
+    """Generate GIFs or APNGs from .cast files using agg."""
     from .config import FrameConfig, ScriptcastConfig
+    from .export import apply_scriptcast_watermark
     from .theme import apply_theme_to_configs, load_theme, scan_sc_for_theme
 
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Layer 1: defaults
-    frame_config = FrameConfig(title=title, watermark=watermark)
+    frame_config = FrameConfig(
+        frame_bar_title=frame_bar_title,
+        watermark=watermark,
+        frame_bar=frame_bar,
+        frame_bar_buttons=frame_bar_buttons,
+    )
+    if frame_bar_color is not None:
+        frame_config.frame_bar_color = frame_bar_color
 
-    # Layer 2: inline SC set theme-* directives from script
     sc_theme = scan_sc_for_theme(sc_path)
     if sc_theme:
-        dummy_sc = ScriptcastConfig()  # theme only affects FrameConfig here; sc_cfg is unused
+        dummy_sc = ScriptcastConfig()
         apply_theme_to_configs(sc_theme, frame_config, dummy_sc)
 
-    # Layer 3: --theme file (highest priority)
     if theme:
-        dummy_sc = ScriptcastConfig()  # theme only affects FrameConfig here; sc_cfg is unused
+        dummy_sc = ScriptcastConfig()
         try:
             theme_dict = load_theme(theme)
         except FileNotFoundError as e:
@@ -212,13 +228,61 @@ def gif(
     for cast_path in paths:
         try:
             use_frame = frame_config.frame == "macos"
-            gif_path = generate_gif(cast_path, frame_config if use_frame else None, format=output_format)
+            export_path = generate_export(
+                cast_path,
+                frame_config if use_frame else None,
+                format=output_format,
+            )
             if not use_frame and frame_config.scriptcast_watermark:
-                from .frame import apply_scriptcast_watermark
-                apply_scriptcast_watermark(gif_path, frame_config)
+                apply_scriptcast_watermark(export_path, frame_config)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
-        click.echo(f"Generated: {gif_path}")
+        click.echo(f"Generated: {export_path}")
+
+
+@cli.command(name="gif", hidden=True)
+@click.argument("sc_file", type=click.Path(exists=True))
+@click.option("--output-dir", default=None, type=click.Path())
+@click.option("--frame-bar-title", "frame_bar_title", default="")
+@click.option("--title", "frame_bar_title_legacy", default="",
+              help="Deprecated: use --frame-bar-title.")
+@click.option("--watermark", default=None)
+@click.option("--theme", default=None)
+@click.option("--frame-bar/--no-frame-bar", default=True)
+@click.option("--frame-bar-color", default=None)
+@click.option("--frame-bar-buttons/--no-frame-bar-buttons", default=True)
+@click.option("--format", "output_format", default="gif",
+              type=click.Choice(["gif", "apng"]))
+@click.pass_context
+def gif(
+    ctx: click.Context,
+    sc_file: str,
+    output_dir: str | None,
+    frame_bar_title: str,
+    frame_bar_title_legacy: str,
+    watermark: str | None,
+    theme: str | None,
+    frame_bar: bool,
+    frame_bar_color: str | None,
+    frame_bar_buttons: bool,
+    output_format: str,
+) -> None:
+    """Deprecated: use 'export' instead."""
+    click.echo("Warning: 'gif' is deprecated. Use 'export' instead.", err=True)
+    # --title is the legacy flag; --frame-bar-title takes precedence if both given
+    resolved_title = frame_bar_title or frame_bar_title_legacy
+    ctx.invoke(
+        export,
+        sc_file=sc_file,
+        output_dir=output_dir,
+        frame_bar_title=resolved_title,
+        watermark=watermark,
+        theme=theme,
+        frame_bar=frame_bar,
+        frame_bar_color=frame_bar_color,
+        frame_bar_buttons=frame_bar_buttons,
+        output_format=output_format,
+    )
 
 
 if __name__ == "__main__":
