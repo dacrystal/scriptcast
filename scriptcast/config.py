@@ -8,7 +8,7 @@ _INT_KEYS = {
     "type_speed", "cmd_wait", "input_wait", "exit_wait",
     "width", "height", "enter_wait", "word_speed",
 }
-_STR_KEYS = {"theme", "prompt", "directive_prefix", "trace_prefix"}
+_STR_KEYS = {"terminal_theme", "prompt", "directive_prefix", "trace_prefix"}
 _BOOL_KEYS = {"show_title", "split_scenes"}
 
 @dataclass
@@ -21,7 +21,7 @@ class ScriptcastConfig:
     word_speed: int | None = None  # ms extra pause after each space; None = same as type_speed
     width: int = 100
     height: int = 28
-    theme: str = "dark"
+    terminal_theme: str = "dark"          # was: theme
     prompt: str = "$ "
     directive_prefix: str = "SC"
     trace_prefix: str = "+"
@@ -32,7 +32,8 @@ class ScriptcastConfig:
         """Apply an SC directive. Only 'set' directives mutate config; others are ignored."""
         if name != "set" or len(args) < 2:
             return
-        key, value = args[0], args[1]
+        key = args[0].replace("-", "_")   # normalise terminal-theme → terminal_theme
+        value = args[1]
         if key in _INT_KEYS:
             setattr(self, key, int(value))
         elif key in _STR_KEYS:
@@ -55,19 +56,25 @@ class FrameConfig:
     # Window title text; empty = no title rendered
     title: str = ""
 
-    # Inner padding between agg content and window edge
-    padding_x: int = 14
-    padding_y: int = 14
+    # Inner padding — individual sides
+    padding_top: int = 14
+    padding_right: int = 14
+    padding_bottom: int = 14
+    padding_left: int = 14
 
     # Window appearance
     radius: int = 12
     border_color: str = "#ffffff30"   # RGBA hex
     border_width: int = 1
 
-    # Outer background (None = no background, no margin)
+    # Outer background (None = no background)
     background: str | None = None     # "#hex" or "#hex1,#hex2" gradient
-    margin_x: int | None = None       # None = auto (0 if no bg, 82 if bg set)
-    margin_y: int | None = None       # None = auto (0 if no bg, 82 if bg set)
+
+    # Outer margins — individual sides (None = auto: 0 if no bg, 82 if bg set)
+    margin_top: int | None = None
+    margin_right: int | None = None
+    margin_bottom: int | None = None
+    margin_left: int | None = None
 
     # Drop shadow (only drawn when frame is active)
     shadow: bool = True
@@ -79,3 +86,9 @@ class FrameConfig:
     watermark: str | None = None
     watermark_color: str = "#ffffff"
     watermark_size: int | None = None  # None = auto (≈11% of canvas width, clamped 20–30px)
+
+    # Frame style
+    frame: str = "none"               # "none" | "macos"
+
+    # Scriptcast brand watermark (opt-out)
+    scriptcast_watermark: bool = True

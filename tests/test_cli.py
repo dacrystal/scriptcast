@@ -124,3 +124,65 @@ def test_extra_args_after_script_errors(tmp_path):
     result = runner.invoke(cli, [str(script), "extra"])
     assert result.exit_code != 0
     assert "Unexpected arguments" in result.output
+
+
+def _make_minimal_sc(tmp_path):
+    import json
+    sc = tmp_path / "demo.sc"
+    sc.write_text(
+        json.dumps({"directive-prefix": "SC", "width": 100, "height": 28}) + "\n"
+    )
+    return sc
+
+
+def test_gif_frame_flag_rejected(tmp_path):
+    """--frame is no longer a valid flag on the gif command."""
+    from unittest.mock import patch
+    from scriptcast.__main__ import cli
+
+    sc = _make_minimal_sc(tmp_path)
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
+        result = runner.invoke(cli, ["gif", str(sc), "--frame"])
+    assert result.exit_code != 0
+
+
+def test_gif_no_scriptcast_watermark_flag_rejected(tmp_path):
+    """--no-scriptcast-watermark is no longer a valid flag."""
+    from unittest.mock import patch
+    from scriptcast.__main__ import cli
+
+    sc = _make_minimal_sc(tmp_path)
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
+        result = runner.invoke(cli, ["gif", str(sc), "--no-scriptcast-watermark"])
+    assert result.exit_code != 0
+
+
+def test_gif_uses_frame_from_theme(tmp_path):
+    """gif command reads frame from theme, not CLI flag."""
+    import json
+    from unittest.mock import patch
+    from scriptcast.__main__ import cli
+
+    sc = tmp_path / "demo.sc"
+    sc.write_text(
+        json.dumps({"directive-prefix": "SC", "width": 100, "height": 28}) + "\n"
+        + json.dumps([0.0, "directive", "set theme-frame macos"]) + "\n"
+    )
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
+        result = runner.invoke(cli, ["gif", str(sc)])
+    assert result.exit_code == 0, result.output
+
+
+def test_gif_theme_flag_accepted(tmp_path):
+    """--theme dark must be accepted without error (dark.sh exists)."""
+    from unittest.mock import patch
+    from scriptcast.__main__ import cli
+
+    sc = _make_minimal_sc(tmp_path)
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
+        result = runner.invoke(cli, ["gif", str(sc), "--theme", "dark"])
+    assert result.exit_code == 0, result.output

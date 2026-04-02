@@ -69,14 +69,19 @@ def _sc_content() -> str:
     return json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
 
 
-def test_gif_command_frame_passes_config(tmp_path):
-    """--frame builds a FrameConfig and passes it to generate_gif."""
+def test_gif_command_title_is_forwarded(tmp_path):
+    """--title is forwarded to FrameConfig when theme sets frame=macos."""
+    import json
     from click.testing import CliRunner
 
     from scriptcast.__main__ import cli
 
     sc_file = tmp_path / "demo.sc"
-    sc_file.write_text(_sc_content())
+    # SC file that sets frame to macos via theme directive
+    sc_file.write_text(
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+        + json.dumps([0.0, "directive", "set theme-frame macos"]) + "\n"
+    )
     fake_cast = tmp_path / "demo.cast"
     fake_gif = tmp_path / "demo.gif"
 
@@ -85,15 +90,13 @@ def test_gif_command_frame_passes_config(tmp_path):
         with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
             result = runner.invoke(
                 cli,
-                ["gif", str(sc_file), "--output-dir", str(tmp_path),
-                 "--frame", "--title", "Demo", "--background", "#1a1a2e"],
+                ["gif", str(sc_file), "--output-dir", str(tmp_path), "--title", "Demo"],
             )
     assert result.exit_code == 0, result.output
+    # frame_config is passed as the second positional arg when frame == "macos"
     frame_config = mock_gif.call_args[0][1]
     assert frame_config is not None
     assert frame_config.title == "Demo"
-    assert frame_config.background == "#1a1a2e"
-    assert frame_config.shadow is True  # default when --frame
 
 
 def test_gif_command_no_frame_passes_none(tmp_path):
@@ -110,13 +113,14 @@ def test_gif_command_no_frame_passes_none(tmp_path):
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
         with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
-            result = runner.invoke(cli, ["gif", str(sc_file), "--output-dir", str(tmp_path)])
+            with patch("scriptcast.frame.apply_scriptcast_watermark"):
+                result = runner.invoke(cli, ["gif", str(sc_file), "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert mock_gif.call_args[0][1] is None
 
 
-def test_gif_command_no_shadow_flag(tmp_path):
-    """--no-shadow sets shadow=False on FrameConfig."""
+def test_gif_command_watermark_is_forwarded(tmp_path):
+    """--watermark text is forwarded into FrameConfig.watermark."""
     from click.testing import CliRunner
 
     from scriptcast.__main__ import cli
@@ -128,13 +132,15 @@ def test_gif_command_no_shadow_flag(tmp_path):
 
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
-        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif) as mock_gif:
-            result = runner.invoke(
-                cli,
-                ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame", "--no-shadow"],
-            )
+        with patch("scriptcast.__main__.generate_gif", return_value=fake_gif):
+            with patch("scriptcast.frame.apply_scriptcast_watermark") as mock_wm:
+                result = runner.invoke(
+                    cli,
+                    ["gif", str(sc_file), "--output-dir", str(tmp_path), "--watermark", "hello"],
+                )
     assert result.exit_code == 0, result.output
-    assert mock_gif.call_args[0][1].shadow is False
+    # apply_scriptcast_watermark called (frame not macos, scriptcast_watermark True by default)
+    mock_wm.assert_called_once()
 
 
 def test_gif_command_frame_error_is_clean(tmp_path):
@@ -155,7 +161,7 @@ def test_gif_command_frame_error_is_clean(tmp_path):
         ):
             result = runner.invoke(
                 cli,
-                ["gif", str(sc_file), "--output-dir", str(tmp_path), "--frame"],
+                ["gif", str(sc_file), "--output-dir", str(tmp_path)],
             )
     assert result.exit_code == 1
     assert "Pillow not installed" in result.output

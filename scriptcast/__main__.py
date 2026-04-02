@@ -163,57 +163,51 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
 @cli.command()
 @click.argument("sc_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
-@click.option("--frame/--no-frame", default=False, help="Add macOS window frame decoration.")
 @click.option("--title", default="", show_default=False, help="Window title text.")
-@click.option("--background", default=None, help="Background color: '#hex' or '#hex1,#hex2' gradient.")  # noqa: E501
-@click.option("--margin", default=None, type=int, help="Outer margin in pixels (default: 82 when --background set).")  # noqa: E501
-@click.option("--padding", default=None, type=int, help="Inner padding in pixels (default: 14).")
-@click.option("--radius", default=12, show_default=True, type=int, help="Window corner radius.")
-@click.option("--shadow/--no-shadow", default=True, help="Drop shadow behind window; only applies with --frame.")  # noqa: E501
-@click.option("--shadow-color", default="#0000004d", show_default=True, help="Shadow color (RGBA hex).")  # noqa: E501
 @click.option("--watermark", default=None, help="Watermark text (opt-in).")
-@click.option("--watermark-color", default="#ffffff", show_default=True, help="Watermark color.")
+@click.option("--theme", default=None, help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")  # noqa: E501
 def gif(
     sc_file: str,
     output_dir: str | None,
-    frame: bool,
     title: str,
-    background: str | None,
-    margin: int | None,
-    padding: int | None,
-    radius: int,
-    shadow: bool,
-    shadow_color: str,
     watermark: str | None,
-    watermark_color: str,
+    theme: str | None,
 ) -> None:
     """Generate GIFs from .cast files using agg."""
-    from .config import FrameConfig
+    from .config import FrameConfig, ScriptcastConfig
+    from .theme import apply_theme_to_configs, load_theme, scan_sc_for_theme
 
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
 
-    frame_config: FrameConfig | None = None
-    if frame:
-        frame_config = FrameConfig(
-            title=title,
-            background=background,
-            margin_x=margin,
-            margin_y=margin,
-            padding_x=padding if padding is not None else 14,
-            padding_y=padding if padding is not None else 14,
-            radius=radius,
-            shadow=shadow,
-            shadow_color=shadow_color,
-            watermark=watermark,
-            watermark_color=watermark_color,
-        )
+    # Layer 1: defaults
+    frame_config = FrameConfig(title=title, watermark=watermark)
+
+    # Layer 2: inline SC set theme-* directives from script
+    sc_theme = scan_sc_for_theme(sc_path)
+    if sc_theme:
+        dummy_sc = ScriptcastConfig()  # theme only affects FrameConfig here; sc_cfg is unused
+        apply_theme_to_configs(sc_theme, frame_config, dummy_sc)
+
+    # Layer 3: --theme file (highest priority)
+    if theme:
+        dummy_sc = ScriptcastConfig()  # theme only affects FrameConfig here; sc_cfg is unused
+        try:
+            theme_dict = load_theme(theme)
+        except FileNotFoundError as e:
+            raise click.ClickException(str(e))
+        apply_theme_to_configs(theme_dict, frame_config, dummy_sc)
+
+    paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
 
     for cast_path in paths:
         try:
-            gif_path = generate_gif(cast_path, frame_config)
+            use_frame = frame_config.frame == "macos"
+            gif_path = generate_gif(cast_path, frame_config if use_frame else None)
+            if not use_frame and frame_config.scriptcast_watermark:
+                from .frame import apply_scriptcast_watermark
+                apply_scriptcast_watermark(gif_path, frame_config)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
         click.echo(f"Generated: {gif_path}")

@@ -37,6 +37,12 @@ gif = [
     "pillow>=9.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+scriptcast = ["assets/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

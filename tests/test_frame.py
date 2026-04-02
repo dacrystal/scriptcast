@@ -33,28 +33,41 @@ def test_hex_rgba_invalid_length_raises():
         _hex_rgba("#fff")
 
 
-def test_resolve_margins_no_background():
+def test_resolve_margin_sides_no_background():
     from scriptcast.config import FrameConfig
-    from scriptcast.frame import _resolve_margins
-    assert _resolve_margins(FrameConfig(background=None)) == (0, 0)
+    from scriptcast.frame import _resolve_margin_sides
+    assert _resolve_margin_sides(FrameConfig(background=None)) == (0, 0, 0, 0)
 
 
-def test_resolve_margins_with_background_auto():
+def test_resolve_margin_sides_with_background_auto():
     from scriptcast.config import FrameConfig
-    from scriptcast.frame import _resolve_margins
-    assert _resolve_margins(FrameConfig(background="#ff0000")) == (82, 82)
+    from scriptcast.frame import _resolve_margin_sides
+    assert _resolve_margin_sides(FrameConfig(background="#ff0000")) == (82, 82, 82, 82)
 
 
-def test_resolve_margins_explicit_override():
+def test_resolve_margin_sides_explicit_override():
     from scriptcast.config import FrameConfig
-    from scriptcast.frame import _resolve_margins
-    assert _resolve_margins(FrameConfig(background="#ff0000", margin_x=10, margin_y=20)) == (10, 20)
+    from scriptcast.frame import _resolve_margin_sides
+    config = FrameConfig(background="#ff0000", margin_top=10, margin_right=20,
+                         margin_bottom=30, margin_left=20)
+    assert _resolve_margin_sides(config) == (10, 20, 30, 20)
 
 
-def test_resolve_margins_explicit_zero():
+def test_resolve_margin_sides_partial_override():
     from scriptcast.config import FrameConfig
-    from scriptcast.frame import _resolve_margins
-    assert _resolve_margins(FrameConfig(background="#ff0000", margin_x=0, margin_y=0)) == (0, 0)
+    from scriptcast.frame import _resolve_margin_sides
+    # Only bottom overridden; others auto to 82 because background is set
+    config = FrameConfig(background="#ff0000", margin_bottom=120)
+    t, r, b, l = _resolve_margin_sides(config)
+    assert t == 82 and r == 82 and b == 120 and l == 82
+
+
+def test_resolve_margin_sides_explicit_zero():
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _resolve_margin_sides
+    config = FrameConfig(background="#ff0000",
+                         margin_top=0, margin_right=0, margin_bottom=0, margin_left=0)
+    assert _resolve_margin_sides(config) == (0, 0, 0, 0)
 
 
 def test_background_none_creates_transparent_canvas():
@@ -210,18 +223,20 @@ def test_watermark_text_modifies_image():
 def test_apply_frame_increases_canvas_size(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
-
     from scriptcast.config import FrameConfig
     from scriptcast.frame import TITLE_BAR_HEIGHT, apply_frame
 
     gif_path = tmp_path / "test.gif"
     _make_tiny_gif(gif_path, width=100, height=60)
 
-    config = FrameConfig(margin_x=50, margin_y=50, padding_x=10, padding_y=10, shadow=False)
+    config = FrameConfig(
+        margin_top=50, margin_right=50, margin_bottom=50, margin_left=50,
+        padding_top=10, padding_right=10, padding_bottom=10, padding_left=10,
+        shadow=False,
+    )
     apply_frame(gif_path, config)
 
     result = Image.open(gif_path)
-    # canvas = content + 2*padding + 2*margin; height also gets TITLE_BAR_HEIGHT
     assert result.width == 100 + 2 * 10 + 2 * 50
     assert result.height == 60 + 2 * 10 + TITLE_BAR_HEIGHT + 2 * 50
 
@@ -236,7 +251,9 @@ def test_apply_frame_preserves_frame_count(tmp_path):
     gif_path = tmp_path / "test.gif"
     _make_tiny_gif(gif_path, width=40, height=20)  # 2 frames
 
-    apply_frame(gif_path, FrameConfig(margin_x=10, margin_y=10, shadow=False))
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ))
 
     result = Image.open(gif_path)
     count = 0
@@ -371,14 +388,16 @@ def test_apply_frame_palette_is_shared(tmp_path):
 
     gif_path = tmp_path / "test.gif"
     _make_colorful_gif(gif_path, width=160, height=80)
-    config = FrameConfig(margin_x=10, margin_y=10, padding_x=8, padding_y=4, shadow=False, radius=0)
+    config = FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10,
+        padding_top=4, padding_right=8, padding_bottom=4, padding_left=8,
+        shadow=False, radius=0,
+    )
     apply_frame(gif_path, config)
 
     img = Image.open(gif_path)
-    # Sample a pixel in the title bar (right side, away from traffic lights)
-    # This region is always _WINDOW_BG (#1E1E1E) and must be identical across frames
-    stable_x = 10 + 120   # well inside window width, right side of title bar
-    stable_y = 10 + TITLE_BAR_HEIGHT // 2  # vertical center of title bar
+    stable_x = 10 + 120
+    stable_y = 10 + TITLE_BAR_HEIGHT // 2
 
     frame_pixels = []
     try:
@@ -404,7 +423,9 @@ def test_apply_frame_traffic_light_color_stable(tmp_path):
     gif_path = tmp_path / "test.gif"
     _make_colorful_gif(gif_path, width=160, height=80)
     config = FrameConfig(
-        margin_x=10, margin_y=10, padding_x=8, padding_y=4, shadow=False, radius=0
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10,
+        padding_top=4, padding_right=8, padding_bottom=4, padding_left=8,
+        shadow=False, radius=0,
     )
     apply_frame(gif_path, config)
 
@@ -425,3 +446,107 @@ def test_apply_frame_traffic_light_color_stable(tmp_path):
     assert pixel_per_frame[0] == pixel_per_frame[1], (
         f"red traffic light color changed between frames: {pixel_per_frame}"
     )
+
+
+def test_scriptcast_watermark_disabled_returns_unchanged():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _apply_scriptcast_watermark
+    base = Image.new("RGBA", (300, 100), (20, 20, 20, 255))
+    result = _apply_scriptcast_watermark(base, FrameConfig(scriptcast_watermark=False))
+    assert result.tobytes() == base.tobytes()
+
+
+def test_scriptcast_watermark_enabled_modifies_image():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _apply_scriptcast_watermark
+    base = Image.new("RGBA", (300, 100), (20, 20, 20, 255))
+    result = _apply_scriptcast_watermark(base, FrameConfig(scriptcast_watermark=True))
+    assert result.tobytes() != base.tobytes()
+
+
+def test_apply_frame_includes_scriptcast_watermark(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    import shutil
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=100, height=60)
+
+    # With watermark (default)
+    gif_wm = tmp_path / "with_wm.gif"
+    shutil.copy(gif_path, gif_wm)
+    apply_frame(gif_wm, FrameConfig())
+
+    # Without watermark
+    gif_no_wm = tmp_path / "no_wm.gif"
+    shutil.copy(gif_path, gif_no_wm)
+    apply_frame(gif_no_wm, FrameConfig(scriptcast_watermark=False))
+
+    wm_data = Image.open(gif_wm).tobytes()
+    no_wm_data = Image.open(gif_no_wm).tobytes()
+    assert wm_data != no_wm_data
+
+
+def test_apply_scriptcast_watermark_standalone(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_scriptcast_watermark
+
+    gif_path = tmp_path / "raw.gif"
+    _make_tiny_gif(gif_path, width=200, height=80)
+
+    original_size = Image.open(gif_path).size
+    apply_scriptcast_watermark(gif_path, FrameConfig())
+    result_size = Image.open(gif_path).size
+
+    # Canvas size must not change
+    assert result_size == original_size
+
+    # Pixels must differ (watermark was drawn)
+    # Re-make original for comparison
+    _make_tiny_gif(tmp_path / "ref.gif", width=200, height=80)
+    ref_bytes = Image.open(tmp_path / "ref.gif").tobytes()
+    result_bytes = Image.open(gif_path).tobytes()
+    assert result_bytes != ref_bytes
+
+
+def test_apply_frame_watermark_over_terminal_content(tmp_path):
+    """Watermark must be drawn on top of terminal content, not behind it."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+
+    # GIF filled entirely with red — easy to distinguish from the white watermark text
+    gif_path = tmp_path / "red.gif"
+    from PIL import Image as _Image
+    red = _Image.new("RGB", (300, 100), (255, 0, 0))
+    red.quantize(colors=256).save(gif_path, save_all=True, duration=100, loop=0)
+
+    config = FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=0, border_width=0,
+        scriptcast_watermark=True,
+    )
+    apply_frame(gif_path, config)
+
+    result = Image.open(gif_path).convert("RGB")
+    # Bottom-right corner should not be all red — watermark pixels are there
+    corner_pixels = [result.getpixel((x, y)) for x in range(280, 300) for y in range(85, 100)]
+    assert any(r != 255 or g != 0 or b != 0 for r, g, b in corner_pixels), (
+        "Expected watermark pixels at bottom-right, but all pixels were red (content color)"
+    )
+
+
+def test_scriptcast_watermark_text_is_scriptcast():
+    """Watermark text is 'ScriptCast' (capital S and C)."""
+    import scriptcast.frame as frame_mod
+    assert frame_mod._WATERMARK_TEXT == "ScriptCast"

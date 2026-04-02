@@ -13,6 +13,8 @@ except ImportError:  # Pillow not installed — only used at runtime inside func
     PILImage = object  # type: ignore[assignment,misc]
 
 TITLE_BAR_HEIGHT = 28
+_PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
+_WATERMARK_TEXT = "ScriptCast"
 _TRAFFIC_LIGHTS = [
     (12, "#FF5F57"),  # red
     (32, "#FEBC2E"),  # yellow
@@ -39,12 +41,14 @@ _CHROME_COLORS: list[tuple[int, int, int]] = (
 )
 
 
-def _resolve_margins(config: FrameConfig) -> tuple[int, int]:
-    """Resolve None margins to their automatic default based on whether a background is set."""
+def _resolve_margin_sides(config: FrameConfig) -> tuple[int, int, int, int]:
+    """Return (top, right, bottom, left), auto-defaulting None to 82 if background is set, else 0."""
     auto = 82 if config.background is not None else 0
-    mx = config.margin_x if config.margin_x is not None else auto
-    my = config.margin_y if config.margin_y is not None else auto
-    return mx, my
+    t = config.margin_top if config.margin_top is not None else auto
+    r = config.margin_right if config.margin_right is not None else auto
+    b = config.margin_bottom if config.margin_bottom is not None else auto
+    l = config.margin_left if config.margin_left is not None else auto
+    return (t, r, b, l)
 
 
 def _build_background(canvas_w: int, canvas_h: int, config: FrameConfig) -> PILImage:
@@ -195,6 +199,76 @@ def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
     return result
 
 
+def _apply_scriptcast_watermark(base: PILImage, config: FrameConfig) -> PILImage:
+    if not config.scriptcast_watermark:
+        return base
+
+    from PIL import ImageDraw, ImageFont
+
+    result = base.copy()
+    draw = ImageDraw.Draw(result)
+
+    font_size = 14
+    try:
+        font = ImageFont.truetype(str(_PACIFICO), size=font_size)
+    except (OSError, AttributeError):
+        try:
+            font = ImageFont.load_default(size=font_size)
+        except TypeError:
+            font = ImageFont.load_default()
+
+    x = base.width - 8
+    y = base.height - 8
+
+    draw.text((x + 1, y + 1), _WATERMARK_TEXT, fill=(0, 0, 0, 160), font=font, anchor="rb")
+    draw.text((x, y), _WATERMARK_TEXT, fill=(255, 255, 255, 220), font=font, anchor="rb")
+
+    return result
+
+
+def apply_scriptcast_watermark(gif_path: Path, config: FrameConfig) -> None:
+    """Overlay the scriptcast brand watermark on an existing GIF in-place.
+
+    Used when --frame is not set. Canvas size is unchanged. Requires Pillow.
+    """
+    try:
+        from PIL import Image
+        from PIL.Image import Dither
+    except ImportError:
+        raise RuntimeError(
+            "Pillow is required for watermark. "
+            "Install with: pip install 'scriptcast[gif]'"
+        )
+
+    if not config.scriptcast_watermark:
+        return
+
+    img = Image.open(gif_path)
+    raw_frames: list[Image.Image] = []
+    durations: list[int] = []
+    try:
+        while True:
+            raw_frames.append(img.copy().convert("RGBA"))
+            durations.append(img.info.get("duration", 100))
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+
+    out_frames = []
+    for raw in raw_frames:
+        with_wm = _apply_scriptcast_watermark(raw, config)
+        out_frames.append(with_wm.convert("RGB").quantize(colors=256, dither=Dither.NONE))
+
+    out_frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=out_frames[1:],
+        loop=0,
+        duration=durations,
+        optimize=False,
+    )
+
+
 def _build_global_palette(
     template_rgb: PILImage,
     rgb_canvases: list[PILImage],
@@ -244,7 +318,7 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
             "Install with: pip install 'scriptcast[gif]'"
         )
 
-    margin_x, margin_y = _resolve_margins(config)
+    mt, mr, mb, ml = _resolve_margin_sides(config)
 
     img = Image.open(gif_path)
     raw_frames: list[Image.Image] = []
@@ -258,29 +332,30 @@ def apply_frame(gif_path: Path, config: FrameConfig) -> None:
         pass
 
     frame_w, frame_h = raw_frames[0].size
-    window_w = frame_w + 2 * config.padding_x
-    window_h = frame_h + 2 * config.padding_y + TITLE_BAR_HEIGHT
-    canvas_w = window_w + 2 * margin_x
-    canvas_h = window_h + 2 * margin_y
-    window_x = margin_x
-    window_y = margin_y
-    content_x = window_x + config.padding_x
-    content_y = window_y + TITLE_BAR_HEIGHT + config.padding_y
+    window_w = frame_w + config.padding_left + config.padding_right
+    window_h = frame_h + config.padding_top + config.padding_bottom + TITLE_BAR_HEIGHT
+    canvas_w = window_w + ml + mr
+    canvas_h = window_h + mt + mb
+    window_x = ml
+    window_y = mt
+    content_x = window_x + config.padding_left
+    content_y = window_y + TITLE_BAR_HEIGHT + config.padding_top
 
-    # Build template — identical for every frame
+    # Build template — background, shadow, window chrome (NO watermarks)
     template = _build_background(canvas_w, canvas_h, config)
     template = _apply_shadow(template, window_x, window_y, window_w, window_h, config)
     template = _apply_window_rect(template, window_x, window_y, window_w, window_h, config)
     template = _apply_title_bar(template, window_x, window_y, window_w, config)
-    template = _apply_watermark(template, config)
 
     template_rgb = template.convert("RGB")
 
-    # Pass 1 — build all RGB canvases
+    # Pass 1 — build all RGB canvases (watermarks applied AFTER paste so they appear on top)
     rgb_canvases = []
     for raw in raw_frames:
         canvas = template.copy()
         canvas.paste(raw, (content_x, content_y))
+        canvas = _apply_watermark(canvas, config)
+        canvas = _apply_scriptcast_watermark(canvas, config)
         rgb_canvases.append(canvas.convert("RGB"))
 
     # Derive a single shared palette from template + sampled frames
