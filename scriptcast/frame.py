@@ -25,13 +25,14 @@ TITLE_BAR_HEIGHT = 28
 _PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
 _WATERMARK_TEXT = "ScriptCast"
 _TRAFFIC_LIGHTS = [
-    (12, "#FF5F57"),  # red
-    (32, "#FEBC2E"),  # yellow
-    (52, "#28C840"),  # green
+    (12, "#FF5F57", "#FF8C80"),  # red
+    (32, "#FEBC2E", "#FFD466"),  # yellow
+    (52, "#28C840", "#5DE87F"),  # green
 ]
 _LIGHT_RADIUS = 6
 _TITLE_COLOR = "#8A8A8A"
 _WINDOW_BG = "#1E1E1E"
+_TITLEBAR_BG = "#252535"
 
 
 def _hex_rgba(hex_color: str) -> tuple[int, int, int, int]:
@@ -45,8 +46,8 @@ def _hex_rgba(hex_color: str) -> tuple[int, int, int, int]:
 
 
 _CHROME_COLORS: list[tuple[int, int, int]] = (
-    [_hex_rgba(c)[:3] for _, c in _TRAFFIC_LIGHTS]
-    + [_hex_rgba(_WINDOW_BG)[:3], _hex_rgba(_TITLE_COLOR)[:3]]
+    [_hex_rgba(base)[:3] for _, base, _ in _TRAFFIC_LIGHTS]
+    + [_hex_rgba(_WINDOW_BG)[:3], _hex_rgba(_TITLEBAR_BG)[:3], _hex_rgba(_TITLE_COLOR)[:3]]
 )
 
 
@@ -148,25 +149,114 @@ def _apply_window_rect(
     return result
 
 
+def _make_content_mask(
+    canvas_size: tuple[int, int],
+    content_x: int,
+    content_y: int,
+    content_w: int,
+    content_h: int,
+    radius: int,
+) -> PILImage:
+    """Return an 'L' mask image the same size as the canvas.
+
+    White (255) where terminal content should show; black (0) elsewhere.
+    Bottom corners are rounded to match the window radius; top corners are
+    straight (the title-bar separator is a flat edge, not a curve).
+    """
+    from PIL import Image, ImageDraw
+
+    mask = Image.new("L", canvas_size, 0)
+    draw = ImageDraw.Draw(mask)
+    r = min(radius, content_w // 2, content_h // 2)
+    box = [content_x, content_y, content_x + content_w - 1, content_y + content_h - 1]
+    # Full rounded rect first (rounds all four corners)
+    draw.rounded_rectangle(box, radius=r, fill=255)
+    # Flatten the top corners by overdrawing a plain rect over the top r rows
+    if r > 0:
+        draw.rectangle(
+            [content_x, content_y, content_x + content_w - 1, content_y + r],
+            fill=255,
+        )
+    return mask
+
+
+def _draw_gradient_circle(
+    img: PILImage,
+    cx: int,
+    cy: int,
+    radius: int,
+    base_color: str,
+    highlight_color: str,
+) -> None:
+    """Paint a radial-gradient circle onto img in-place, simulating a 3D sphere.
+
+    Draws concentric filled circles stepping from highlight_color at the centre
+    to base_color at the edge. The highlight is offset slightly toward the
+    upper-left to simulate a directional light source.
+    """
+    from PIL import Image, ImageDraw
+
+    steps = 8
+    base = _hex_rgba(base_color)
+    highlight = _hex_rgba(highlight_color)
+    offset_x = int(radius * 0.20)
+
+    for i in range(steps, 0, -1):
+        t = i / steps  # 1.0 at outermost, 0.0 at innermost
+        r = int(base[0] * t + highlight[0] * (1 - t))
+        g = int(base[1] * t + highlight[1] * (1 - t))
+        b = int(base[2] * t + highlight[2] * (1 - t))
+        circle_r = int(radius * (i + 1) / (steps + 1))
+        # Shift centre toward upper-left for innermost rings
+        shift = int((1 - t) * offset_x)
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
+        draw.ellipse(
+            [cx - circle_r - shift, cy - circle_r - shift,
+             cx + circle_r - shift, cy + circle_r - shift],
+            fill=(r, g, b, 255),
+        )
+        img.paste(layer, (0, 0), layer)
+
+
 def _apply_title_bar(
     base: PILImage,
     window_x: int,
     window_y: int,
     window_w: int,
+    window_h: int,
     config: FrameConfig,
 ) -> PILImage:
-    from PIL import ImageDraw
+    from PIL import Image, ImageDraw
 
     result = base.copy()
-    draw = ImageDraw.Draw(result)
+
+    # --- Titlebar background clipped to window rounded corners ---
+    r = config.radius
+    # Build a clip mask: white only inside the window's rounded rect AND above content
+    clip = Image.new("L", result.size, 0)
+    clip_draw = ImageDraw.Draw(clip)
+    clip_draw.rounded_rectangle(
+        [window_x, window_y, window_x + window_w, window_y + window_h],
+        radius=r, fill=255,
+    )
+    # Black out everything below the title bar
+    clip_draw.rectangle(
+        [window_x, window_y + TITLE_BAR_HEIGHT, window_x + window_w, window_y + window_h],
+        fill=0,
+    )
+    titlebar_fill = Image.new("RGBA", result.size, _hex_rgba(_TITLEBAR_BG))
+    result = Image.composite(titlebar_fill, result, clip)
+
+    # --- Traffic lights and title text ---
     y_center = window_y + TITLE_BAR_HEIGHT // 2
 
-    for light_x, color in _TRAFFIC_LIGHTS:
+    for light_x, base_color, highlight_color in _TRAFFIC_LIGHTS:
         cx = window_x + light_x
-        r = _LIGHT_RADIUS
-        draw.ellipse([cx - r, y_center - r, cx + r, y_center + r], fill=_hex_rgba(color))
+        _draw_gradient_circle(result, cx, y_center, _LIGHT_RADIUS, base_color, highlight_color)
 
     if config.title:
+        draw = ImageDraw.Draw(result)
         draw.text(
             (window_x + window_w // 2, y_center),
             config.title,
@@ -331,12 +421,6 @@ def apply_frame(gif_path: Path, config: FrameConfig, format: str = "gif") -> Non
             "Install with: pip install 'scriptcast[gif]'"
         )
 
-    if format == "apng" and not _svg_available:
-        raise RuntimeError(
-            "APNG output requires cairosvg. "
-            "Install with: pip install 'scriptcast[gif]' (requires libcairo system library)."
-        )
-
     mt, mr, mb, ml = _resolve_margin_sides(config)
 
     img = Image.open(gif_path)
@@ -363,16 +447,24 @@ def apply_frame(gif_path: Path, config: FrameConfig, format: str = "gif") -> Non
     if _svg_available:
         from . import svg_frame as _svg_frame
 
-        svg_str, (content_x, content_y, _cw, _ch) = _svg_frame.build_svg(
+        svg_str, (content_x, content_y, content_w, content_h) = _svg_frame.build_svg(
             config, canvas_w, canvas_h, window_x, window_y, window_w, window_h
         )
         png_bytes = _cairosvg.svg2png(bytestring=svg_str.encode())
         chrome = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
 
+        _full_mask = _make_content_mask(
+            chrome.size, content_x, content_y, content_w, content_h, config.radius
+        )
+        # PIL paste() requires the mask to match the source image size, not the canvas.
+        content_mask = _full_mask.crop(
+            (content_x, content_y, content_x + content_w, content_y + content_h)
+        )
+
         rgba_canvases: list[Image.Image] = []
         for raw in raw_frames:
             canvas = chrome.copy()
-            canvas.paste(raw, (content_x, content_y))
+            canvas.paste(raw, (content_x, content_y), content_mask)
             canvas = _apply_watermark(canvas, config)
             canvas = _apply_scriptcast_watermark(canvas, config)
             rgba_canvases.append(canvas)
@@ -409,31 +501,51 @@ def apply_frame(gif_path: Path, config: FrameConfig, format: str = "gif") -> Non
     # ----------------------------------------------------------------
     content_x = window_x + config.padding_left
     content_y = window_y + TITLE_BAR_HEIGHT + config.padding_top
+    content_w = window_w - config.padding_left - config.padding_right
+    content_h = window_h - TITLE_BAR_HEIGHT - config.padding_top - config.padding_bottom
 
     template = _build_background(canvas_w, canvas_h, config)
     template = _apply_shadow(template, window_x, window_y, window_w, window_h, config)
     template = _apply_window_rect(template, window_x, window_y, window_w, window_h, config)
-    template = _apply_title_bar(template, window_x, window_y, window_w, config)
+    template = _apply_title_bar(template, window_x, window_y, window_w, window_h, config)
 
-    template_rgb = template.convert("RGB")
+    _full_mask = _make_content_mask(
+        template.size, content_x, content_y, content_w, content_h, config.radius
+    )
+    # PIL paste() requires the mask to match the source image size, not the canvas.
+    content_mask = _full_mask.crop(
+        (content_x, content_y, content_x + content_w, content_y + content_h)
+    )
 
-    rgb_canvases = []
+    rgba_canvases_pil = []
     for raw in raw_frames:
         canvas = template.copy()
-        canvas.paste(raw, (content_x, content_y))
+        canvas.paste(raw, (content_x, content_y), content_mask)
         canvas = _apply_watermark(canvas, config)
         canvas = _apply_scriptcast_watermark(canvas, config)
-        rgb_canvases.append(canvas.convert("RGB"))
+        rgba_canvases_pil.append(canvas)
 
-    palette_ref = _build_global_palette(template_rgb, rgb_canvases)
-    out_frames = [
-        frame.quantize(palette=palette_ref, dither=Dither.NONE) for frame in rgb_canvases
-    ]
-    out_frames[0].save(
-        gif_path,
-        save_all=True,
-        append_images=out_frames[1:],
-        loop=0,
-        duration=durations,
-        optimize=False,
-    )
+    if format == "apng":
+        rgba_canvases_pil[0].save(
+            output_path,
+            format="PNG",
+            save_all=True,
+            append_images=rgba_canvases_pil[1:],
+            loop=0,
+            duration=durations,
+        )
+    else:
+        template_rgb = template.convert("RGB")
+        rgb_canvases = [c.convert("RGB") for c in rgba_canvases_pil]
+        palette_ref = _build_global_palette(template_rgb, rgb_canvases)
+        out_frames = [
+            frame.quantize(palette=palette_ref, dither=Dither.NONE) for frame in rgb_canvases
+        ]
+        out_frames[0].save(
+            output_path,
+            save_all=True,
+            append_images=out_frames[1:],
+            loop=0,
+            duration=durations,
+            optimize=False,
+        )

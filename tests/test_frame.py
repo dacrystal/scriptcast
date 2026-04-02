@@ -181,9 +181,10 @@ def test_title_bar_red_traffic_light():
     from scriptcast.frame import TITLE_BAR_HEIGHT, _apply_title_bar
     config = FrameConfig()
     base = Image.new("RGBA", (200, 200), (30, 30, 30, 255))
-    result = _apply_title_bar(base, 0, 0, 200, config)
+    result = _apply_title_bar(base, 0, 0, 200, 200, config)
     r, g, b, a = result.getpixel((12, TITLE_BAR_HEIGHT // 2))
-    assert r == 255 and g == 95 and b == 87  # #FF5F57
+    # Centre pixel is the highlight colour #FF8C80 — still clearly red
+    assert r > 200 and g > 100 and b > 100 and r > g
 
 
 def test_title_bar_with_title_differs_from_without():
@@ -193,8 +194,8 @@ def test_title_bar_with_title_differs_from_without():
     from scriptcast.config import FrameConfig
     from scriptcast.frame import _apply_title_bar
     base = Image.new("RGBA", (200, 200), (30, 30, 30, 255))
-    no_title = _apply_title_bar(base, 0, 0, 200, FrameConfig(title=""))
-    with_title = _apply_title_bar(base, 0, 0, 200, FrameConfig(title="Demo"))
+    no_title = _apply_title_bar(base, 0, 0, 200, 200, FrameConfig(title=""))
+    with_title = _apply_title_bar(base, 0, 0, 200, 200, FrameConfig(title="Demo"))
     assert no_title.tobytes() != with_title.tobytes()
 
 
@@ -741,7 +742,8 @@ def test_apply_frame_apng_is_full_color(tmp_path, monkeypatch):
     assert result.mode in ("RGB", "RGBA"), f"Unexpected mode: {result.mode}"
 
 
-def test_apply_frame_apng_without_cairosvg_raises(tmp_path, monkeypatch):
+def test_apply_frame_apng_pil_fallback_writes_png(tmp_path, monkeypatch):
+    """PIL fallback must write a .png file when format='apng', even without cairosvg."""
     pytest.importorskip("PIL")
     import scriptcast.frame as frame_mod
     from scriptcast.config import FrameConfig
@@ -752,5 +754,240 @@ def test_apply_frame_apng_without_cairosvg_raises(tmp_path, monkeypatch):
     gif_path = tmp_path / "test.gif"
     _make_tiny_gif(gif_path, width=40, height=20)
 
-    with pytest.raises(RuntimeError, match="APNG output requires cairosvg"):
-        apply_frame(gif_path, FrameConfig(), format="apng")
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ), format="apng")
+
+    assert gif_path.with_suffix(".png").exists(), "Expected .png for apng format in PIL fallback"
+
+
+def test_apply_frame_apng_pil_fallback_frame_count(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+
+    gif_path = tmp_path / "test.gif"
+    _make_tiny_gif(gif_path, width=40, height=20)  # 2 frames
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=10, margin_right=10, margin_bottom=10, margin_left=10, shadow=False
+    ), format="apng")
+
+    img = Image.open(gif_path.with_suffix(".png"))
+    count = 0
+    try:
+        while True:
+            count += 1
+            img.seek(img.tell() + 1)
+    except EOFError:
+        pass
+    assert count == 2
+
+
+def test_apply_frame_apng_pil_fallback_full_color(tmp_path, monkeypatch):
+    """PIL APNG frames must not be quantized."""
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+
+    red = Image.new("RGB", (60, 40), (200, 50, 30))
+    gif_path = tmp_path / "red.gif"
+    red.quantize(colors=256).save(gif_path, duration=100, loop=0)
+
+    apply_frame(gif_path, FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=0, border_width=0, scriptcast_watermark=False,
+    ), format="apng")
+
+    result = Image.open(gif_path.with_suffix(".png")).convert("RGB")
+    assert result.mode in ("RGB", "RGBA"), f"Unexpected mode: {result.mode}"
+
+
+def test_make_content_mask_returns_l_mode():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    mask = _make_content_mask((200, 150), 10, 30, 100, 80, radius=0)
+    assert mask.mode == "L"
+    assert mask.size == (200, 150)
+
+
+def test_make_content_mask_center_is_white():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    mask = _make_content_mask((200, 150), 10, 30, 100, 80, radius=0)
+    # Centre of content area
+    assert mask.getpixel((60, 70)) == 255
+
+
+def test_make_content_mask_outside_is_black():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    mask = _make_content_mask((200, 150), 10, 30, 100, 80, radius=0)
+    # Pixel outside content area (left of it)
+    assert mask.getpixel((5, 70)) == 0
+    # Pixel above content area
+    assert mask.getpixel((60, 5)) == 0
+
+
+def test_make_content_mask_bottom_corner_rounded():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    # content at (0,0), 100x60, radius=20 — bottom-left corner pixel should be masked
+    mask = _make_content_mask((100, 60), 0, 0, 100, 60, radius=20)
+    assert mask.getpixel((0, 59)) == 0   # bottom-left corner, inside the arc
+
+
+def test_make_content_mask_top_corners_not_rounded():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    # radius=20 but top corners must remain straight (flat edge at title bar separator)
+    mask = _make_content_mask((100, 60), 0, 0, 100, 60, radius=20)
+    assert mask.getpixel((0, 0)) == 255   # top-left — must NOT be clipped
+    assert mask.getpixel((99, 0)) == 255  # top-right — must NOT be clipped
+
+
+def test_make_content_mask_right_and_bottom_edges_are_white():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    mask = _make_content_mask((200, 150), 10, 30, 100, 80, radius=0)
+    # Rightmost column of content area
+    assert mask.getpixel((109, 70)) == 255   # content_x + content_w - 1 = 10 + 100 - 1 = 109
+    # Bottom row of content area
+    assert mask.getpixel((60, 109)) == 255   # content_y + content_h - 1 = 30 + 80 - 1 = 109
+
+
+def test_make_content_mask_offset_with_radius():
+    pytest.importorskip("PIL")
+    from scriptcast.frame import _make_content_mask
+    # Non-zero offset + radius — the realistic production case
+    mask = _make_content_mask((200, 150), 20, 40, 100, 80, radius=10)
+    # Centre is white
+    assert mask.getpixel((70, 80)) == 255    # content_x + content_w//2, content_y + content_h//2
+    # Bottom-left corner is clipped (rounded)
+    assert mask.getpixel((20, 119)) == 0     # content_x, content_y + content_h - 1
+    # Top-left corner is straight (not clipped)
+    assert mask.getpixel((20, 40)) == 255    # content_x, content_y
+
+
+def test_apply_frame_svg_path_corner_not_terminal_color(tmp_path, monkeypatch):
+    """With radius>0 and padding=0, bottom-left corner must not be the terminal fill colour."""
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image as _Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", True)
+    monkeypatch.setattr(frame_mod, "_cairosvg", _make_fake_cairosvg(0, 0))
+
+    # Bright red terminal frame — easy to detect bleed
+    red = _Image.new("RGB", (80, 60), (200, 0, 0))
+    gif_path = tmp_path / "red.gif"
+    red.quantize(colors=256).save(gif_path, duration=100, loop=0)
+
+    config = FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=12, border_width=0,
+        scriptcast_watermark=False,
+    )
+    apply_frame(gif_path, config)
+
+    result = _Image.open(gif_path).convert("RGB")
+    # Bottom-left corner of the full canvas — window radius clips this pixel
+    r, g, b = result.getpixel((0, result.height - 1))
+    assert not (r > 150 and g < 50 and b < 50), (
+        "Bottom-left corner is terminal red — content is bleeding outside rounded window"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 5: _draw_gradient_circle unit tests
+# ---------------------------------------------------------------------------
+
+def test_draw_gradient_circle_center_is_highlight():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.frame import _draw_gradient_circle
+
+    img = Image.new("RGBA", (40, 40), (30, 30, 30, 255))
+    _draw_gradient_circle(img, 20, 20, 6, "#FF5F57", "#FF8C80")
+    r, g, b, a = img.getpixel((20, 20))
+    # Centre should be close to highlight #FF8C80 = (255, 140, 128)
+    assert r > 200 and g > 100 and b > 100
+
+
+def test_draw_gradient_circle_edge_is_darker_than_center():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.frame import _draw_gradient_circle
+
+    img = Image.new("RGBA", (40, 40), (30, 30, 30, 255))
+    _draw_gradient_circle(img, 20, 20, 6, "#FF5F57", "#FF8C80")
+    r_center, g_center, _, _ = img.getpixel((20, 20))
+    r_edge, g_edge, _, _ = img.getpixel((26, 20))  # rightmost edge pixel
+    # Edge green channel should be less than or equal to centre (dimmer)
+    assert g_edge <= g_center
+
+
+# ---------------------------------------------------------------------------
+# Task 4: titlebar background colour test
+# ---------------------------------------------------------------------------
+
+def test_title_bar_bg_is_titlebar_color():
+    """The title bar area should be filled with #252535, not the window bg #1E1E1E."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _apply_title_bar
+
+    # Window fill is pure black so any non-black pixel in titlebar area is the titlebar colour
+    base = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
+    result = _apply_title_bar(base, 0, 0, 200, 200, FrameConfig(radius=0))
+    # Middle of the title bar, away from traffic lights
+    r, g, b, a = result.getpixel((150, 14))
+    assert (r, g, b) == (0x25, 0x25, 0x35), (
+        f"Expected titlebar colour #252535, got ({r:#x}, {g:#x}, {b:#x})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: PIL fallback content masking
+# ---------------------------------------------------------------------------
+
+def test_apply_frame_pil_fallback_corner_not_terminal_color(tmp_path, monkeypatch):
+    """PIL path: with radius>0 and padding=0, bottom-left corner must not be terminal colour."""
+    pytest.importorskip("PIL")
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+    from PIL import Image as _Image
+
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+
+    red = _Image.new("RGB", (80, 60), (200, 0, 0))
+    gif_path = tmp_path / "red.gif"
+    red.quantize(colors=256).save(gif_path, duration=100, loop=0)
+
+    config = FrameConfig(
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+        shadow=False, radius=12, border_width=0,
+        scriptcast_watermark=False,
+    )
+    apply_frame(gif_path, config)
+
+    result = _Image.open(gif_path).convert("RGB")
+    r, g, b = result.getpixel((0, result.height - 1))
+    assert not (r > 150 and g < 50 and b < 50), (
+        "Bottom-left corner is terminal red — PIL fallback content is bleeding outside window"
+    )
