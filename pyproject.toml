@@ -19,7 +19,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "asciinema>=2.4.0",
     "click>=8.0",
 ]
 
@@ -28,6 +27,7 @@ scriptcast = "scriptcast.__main__:cli"
 
 [project.optional-dependencies]
 dev = [
+    "asciinema>=2.4.0",
     "pytest>=8.0",
     "pytest-cov",
     "ruff>=0.4",
