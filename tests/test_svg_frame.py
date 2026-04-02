@@ -111,11 +111,13 @@ def test_svg_title_bar_uses_clip_path():
 # Shadow
 # ------------------------------------------------------------------
 
-def test_svg_shadow_enabled_has_drop_shadow_filter():
+def test_svg_shadow_enabled_has_decomposed_filter():
     from scriptcast.config import FrameConfig
     config = FrameConfig(shadow=True)
     svg, _ = _svg(config)
-    assert 'feDropShadow' in svg
+    assert 'feGaussianBlur' in svg
+    assert 'feMerge' in svg
+    assert 'feDropShadow' not in svg
     assert 'url(#shadow)' in svg
 
 
@@ -123,7 +125,9 @@ def test_svg_shadow_disabled_no_filter_element():
     from scriptcast.config import FrameConfig
     config = FrameConfig(shadow=False)
     svg, _ = _svg(config)
-    assert 'feDropShadow' not in svg
+    assert 'feGaussianBlur' not in svg
+    assert 'url(#shadow)' not in svg
+    assert 'feMerge' not in svg
 
 
 def test_svg_shadow_offset_y_in_filter():

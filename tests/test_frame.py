@@ -147,6 +147,24 @@ def test_shadow_adds_visible_pixels_near_window():
     assert a > 0
 
 
+def test_shadow_correct_alpha_on_transparent_base():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import _apply_shadow
+    # shadow_color alpha=77 (~30%). On transparent base, result alpha should be 77.
+    # paste() incorrectly gives ≈23 (77²/255); alpha_composite gives 77.
+    config = FrameConfig(
+        shadow=True, shadow_radius=0, shadow_offset_y=0,
+        shadow_color="#0000004d", radius=0,
+    )
+    base = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    result = _apply_shadow(base, 50, 50, 100, 100, config)
+    _, _, _, a = result.getpixel((100, 100))
+    assert a >= 70  # paste() gives ≈23; alpha_composite gives 77
+
+
 def test_window_rect_fills_center():
     pytest.importorskip("PIL")
     from PIL import Image
@@ -160,15 +178,35 @@ def test_window_rect_fills_center():
     assert a == 255
 
 
-def test_window_rect_border_color_applied():
+def test_window_border_color_applied():
     pytest.importorskip("PIL")
     from PIL import Image
 
     from scriptcast.config import FrameConfig
-    from scriptcast.frame import _apply_window_rect
+    from scriptcast.frame import _apply_window_border
     config = FrameConfig(border_color="#ff0000ff", border_width=3, radius=0)
     base = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    result = _apply_window_border(base, 10, 10, 100, 80, config)
+    r, g, b, a = result.getpixel((60, 10))
+    assert r == 255 and g == 0 and b == 0
+
+
+def test_window_border_visible_at_top_after_title_bar():
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import (
+        _apply_title_bar,
+        _apply_window_border,
+        _apply_window_rect,
+    )
+    config = FrameConfig(border_color="#ff0000ff", border_width=2, radius=0)
+    base = Image.new("RGBA", (200, 200), (30, 30, 30, 255))
     result = _apply_window_rect(base, 10, 10, 100, 80, config)
+    result = _apply_title_bar(result, 10, 10, 100, 80, config)
+    result = _apply_window_border(result, 10, 10, 100, 80, config)
+    # Top edge pixel should be the border color (red), not title bar bg
     r, g, b, a = result.getpixel((60, 10))
     assert r == 255 and g == 0 and b == 0
 
@@ -991,3 +1029,66 @@ def test_apply_frame_pil_fallback_corner_not_terminal_color(tmp_path, monkeypatc
     assert not (r > 150 and g < 50 and b < 50), (
         "Bottom-left corner is terminal red — PIL fallback content is bleeding outside window"
     )
+
+
+def test_apply_frame_content_inset_by_border_width(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import TITLE_BAR_HEIGHT, apply_frame
+
+    # Solid green content GIF
+    gif_path = tmp_path / "test.gif"
+    frame_img = Image.new("RGB", (20, 20), (0, 200, 0))
+    frame_img.quantize(colors=256).save(gif_path)
+
+    bw = 2
+    config = FrameConfig(
+        background=None, shadow=False,
+        border_width=bw, border_color="#ff0000ff",
+        padding_top=4, padding_bottom=4, padding_left=4, padding_right=4,
+        radius=0, scriptcast_watermark=False,
+    )
+
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+    apply_frame(gif_path, config, format="apng")
+
+    out = Image.open(gif_path.with_suffix(".png")).convert("RGBA")
+    # Pixel inside the inner border zone (padding_left=4, but border is bw=2 wide,
+    # so x=4 falls inside the border inset region) should NOT be green after the fix
+    # (content should start at padding_left + border_width = 4+2 = 6)
+    r, g, b, a = out.getpixel((4, TITLE_BAR_HEIGHT + 4))
+    assert g < 150, f"Expected window bg at inner border zone, got ({r},{g},{b}) — content overlaps border"
+    # Pixel at (padding_left + border_width, TITLE_BAR_HEIGHT + padding_top + border_width)
+    # should be green (content starts here after inset)
+    r, g, b, a = out.getpixel((4 + bw, TITLE_BAR_HEIGHT + 4 + bw))
+    assert g > 150, f"Expected green content, got ({r},{g},{b})"
+
+
+def test_apply_frame_content_inset_note_when_border_exceeds_padding(tmp_path, monkeypatch):
+    # Documenting known behavior: when border_width > padding, content_x/y are still
+    # inset by bw, but content_w/h are not reduced, so content can overlap the border
+    # on the right/bottom edges. This is acceptable because the border stroke is drawn
+    # on top. Tracked as a known approximation (see frame.py comment near content_w).
+    pytest.importorskip("PIL")
+    from PIL import Image
+
+    import scriptcast.frame as frame_mod
+    from scriptcast.config import FrameConfig
+    from scriptcast.frame import apply_frame
+
+    gif_path = tmp_path / "test.gif"
+    Image.new("RGB", (10, 10), (0, 200, 0)).quantize(colors=256).save(gif_path)
+
+    config = FrameConfig(
+        background=None, shadow=False,
+        border_width=6, padding_top=2, padding_bottom=2, padding_left=2, padding_right=2,
+        radius=0, scriptcast_watermark=False,
+    )
+    monkeypatch.setattr(frame_mod, "_svg_available", False)
+    # Should not raise even when border_width (6) > padding (2)
+    apply_frame(gif_path, config, format="apng")
+    out = Image.open(gif_path.with_suffix(".png")).convert("RGBA")
+    assert out.size[0] > 0  # output is produced

@@ -233,3 +233,39 @@ def test_parse_css_shorthand_invalid_raises():
     from scriptcast.theme import _parse_css_shorthand
     with pytest.raises(ValueError, match="1-4"):
         _parse_css_shorthand("10 20 30 40 50")
+
+
+def test_parse_theme_file_multi_value_margin(tmp_path):
+    from scriptcast.theme import parse_theme_file
+    f = tmp_path / "t.sh"
+    f.write_text(": SC set theme-margin 82 82 120\n")
+    result = parse_theme_file(f)
+    assert result == {"theme-margin": "82 82 120"}
+
+
+def test_parse_theme_file_trims_trailing_whitespace(tmp_path):
+    from scriptcast.theme import parse_theme_file
+    f = tmp_path / "t.sh"
+    f.write_text(": SC set theme-radius 16 \n")  # trailing space
+    result = parse_theme_file(f)
+    assert result == {"theme-radius": "16"}
+
+
+def test_scan_sc_for_theme_multi_value_padding(tmp_path):
+    import json
+    from scriptcast.theme import scan_sc_for_theme
+    sc_file = tmp_path / "demo.sc"
+    sc_file.write_text(
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+        + json.dumps([0.0, "directive", "set theme-padding 14 0 0 0"]) + "\n"
+    )
+    result = scan_sc_for_theme(sc_file)
+    assert result == {"theme-padding": "14 0 0 0"}
+
+
+def test_dark_theme_margin_bottom_is_120():
+    from scriptcast.config import FrameConfig, ScriptcastConfig
+    from scriptcast.theme import apply_theme_to_configs, load_theme
+    fc = FrameConfig()
+    apply_theme_to_configs(load_theme("dark"), fc, ScriptcastConfig())
+    assert fc.margin_bottom == 120

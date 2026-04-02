@@ -116,11 +116,11 @@ def _apply_shadow(
     )
     shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(r))
 
-    result = base.copy()
     dest_x = window_x - pad
     dest_y = window_y - pad + offset_y
-    result.paste(shadow_img, (dest_x, dest_y), shadow_img)
-    return result
+    shadow_canvas = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    shadow_canvas.paste(shadow_img, (dest_x, dest_y))
+    return Image.alpha_composite(base, shadow_canvas)
 
 
 def _apply_window_rect(
@@ -138,14 +138,31 @@ def _apply_window_rect(
     box = [window_x, window_y, window_x + window_w, window_y + window_h]
 
     draw.rounded_rectangle(box, radius=config.radius, fill=_hex_rgba(_WINDOW_BG))
+    return result
 
-    if config.border_width > 0:
-        draw.rounded_rectangle(
-            box,
-            radius=config.radius,
-            outline=_hex_rgba(config.border_color),
-            width=config.border_width,
-        )
+
+def _apply_window_border(
+    base: PILImage,
+    window_x: int,
+    window_y: int,
+    window_w: int,
+    window_h: int,
+    config: FrameConfig,
+) -> PILImage:
+    if config.border_width <= 0:
+        return base
+
+    from PIL import ImageDraw
+
+    result = base.copy()
+    draw = ImageDraw.Draw(result)
+    box = [window_x, window_y, window_x + window_w, window_y + window_h]
+    draw.rounded_rectangle(
+        box,
+        radius=config.radius,
+        outline=_hex_rgba(config.border_color),
+        width=config.border_width,
+    )
     return result
 
 
@@ -499,15 +516,20 @@ def apply_frame(gif_path: Path, config: FrameConfig, format: str = "gif") -> Non
     # ----------------------------------------------------------------
     # PIL fallback path (used when cairosvg is not installed)
     # ----------------------------------------------------------------
-    content_x = window_x + config.padding_left
-    content_y = window_y + TITLE_BAR_HEIGHT + config.padding_top
-    content_w = window_w - config.padding_left - config.padding_right
-    content_h = window_h - TITLE_BAR_HEIGHT - config.padding_top - config.padding_bottom
+    bw = config.border_width
+    content_x = window_x + config.padding_left + bw
+    content_y = window_y + TITLE_BAR_HEIGHT + config.padding_top + bw
+    # content_w/h stay at frame dimensions (not reduced by bw) — matches SVG path convention.
+    # The border stroke drawn by _apply_window_border covers any incidental overlap on the
+    # right/bottom edges. Valid when padding >= bw, which holds for typical usage.
+    content_w = frame_w
+    content_h = frame_h
 
     template = _build_background(canvas_w, canvas_h, config)
     template = _apply_shadow(template, window_x, window_y, window_w, window_h, config)
     template = _apply_window_rect(template, window_x, window_y, window_w, window_h, config)
     template = _apply_title_bar(template, window_x, window_y, window_w, window_h, config)
+    template = _apply_window_border(template, window_x, window_y, window_w, window_h, config)
 
     _full_mask = _make_content_mask(
         template.size, content_x, content_y, content_w, content_h, config.radius

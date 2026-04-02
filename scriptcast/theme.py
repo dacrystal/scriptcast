@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 _BUILTIN_THEMES_DIR = Path(__file__).parent / "assets" / "themes"
 
 # Matches:  : SC set <key> <value>
-_SET_RE = re.compile(r":\s+SC\s+set\s+(\S+)\s+(\S+)")
+_SET_RE = re.compile(r":\s+SC\s+set\s+(\S+)\s+(.+?)\s*$")
 
 _INT_THEME_PROPS = {
     "radius", "border-width",
@@ -128,5 +128,5 @@ def scan_sc_for_theme(sc_path: Path) -> dict[str, str]:
         if len(parts) >= 3 and parts[0] == "set":
             key = parts[1]
             if key.startswith("theme-") or key == "terminal-theme":
-                result[key] = parts[2]
+                result[key] = " ".join(parts[2:])
     return result

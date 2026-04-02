@@ -82,16 +82,21 @@ def build_svg(
         f"</clipPath>"
     )
 
-    # Drop shadow filter
+    # Drop shadow filter — decomposed from feDropShadow for cairosvg compatibility
     if config.shadow:
         sc, sa = _split_rgba(config.shadow_color)
         std = config.shadow_radius / 2
         parts.append(
             f'<filter id="shadow" x="-60%" y="-60%" width="220%" height="220%">'
-            f'<feDropShadow dx="0" dy="{config.shadow_offset_y}"'
-            f' stdDeviation="{std:.1f}"'
-            f' flood-color="{sc}" flood-opacity="{sa:.3f}"/>'
-            f"</filter>"
+            f'<feGaussianBlur in="SourceAlpha" stdDeviation="{std:.1f}" result="blur"/>'
+            f'<feOffset in="blur" dx="0" dy="{config.shadow_offset_y}" result="offsetBlur"/>'
+            f'<feFlood flood-color="{sc}" flood-opacity="{sa:.3f}" result="color"/>'
+            f'<feComposite in="color" in2="offsetBlur" operator="in" result="shadow"/>'
+            f'<feMerge>'
+            f'<feMergeNode in="shadow"/>'
+            f'<feMergeNode in="SourceGraphic"/>'
+            f'</feMerge>'
+            f'</filter>'
         )
 
     # Radial gradients for 3D traffic lights
