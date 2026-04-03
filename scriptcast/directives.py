@@ -326,7 +326,7 @@ class SetDirective(Directive):
         cursor: float,
     ) -> tuple[float, list[str]]:
         _, _, text = event
-        parts = text.split()
+        parts = shlex.split(text)
         args = parts[1:]
         if len(args) >= 2:
             active.apply("set", args)

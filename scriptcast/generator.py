@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from collections import deque
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def generate_from_sc_text(
     # Apply pre-scene set directives to base config
     for _, typ, text in events:
         if typ == "directive":
-            parts = text.split()
+            parts = shlex.split(text)
             if parts[0] == "scene":
                 break
             if parts[0] == "set" and len(parts) >= 3:

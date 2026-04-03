@@ -361,6 +361,16 @@ def test_set_directive_gen_mutates_active_config():
     assert events == []
 
 
+def test_set_directive_gen_quoted_value():
+    # bash traces `"$ "` as `'$ '`; shlex.split must handle shell quoting
+    d = SetDirective()
+    active = ScriptcastConfig()
+    cursor, events = d.gen((1.0, "directive", "set prompt '$ '"), deque(), active, 0.0)
+    assert active.prompt == "$ "
+    assert cursor == 0.0
+    assert events == []
+
+
 def test_sleep_directive_gen_advances_cursor():
     d = SleepDirective()
     active = ScriptcastConfig()

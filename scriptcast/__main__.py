@@ -174,6 +174,7 @@ def generate(sc_file: str, output_dir: str | None, split_scenes: bool) -> None:
 @click.option("--directive-prefix", default="SC", show_default=True)
 @click.option("--trace-prefix", default="+", show_default=True)
 @click.option("--shell", default=None)
+@click.option("--split-scenes/--no-split-scenes", default=False)
 def export(
     input_file: str,
     output_dir: str | None,
@@ -182,6 +183,7 @@ def export(
     directive_prefix: str,
     trace_prefix: str,
     shell: str | None,
+    split_scenes: bool,
 ) -> None:
     """Generate GIF or PNG animations from .sc, .cast, or .sh files."""
     from .config import FrameConfig, ScriptcastConfig
@@ -227,7 +229,7 @@ def export(
     if suffix == ".cast":
         cast_paths = [in_path]
     else:
-        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
+        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes)
 
     for cast_path in cast_paths:
         try:

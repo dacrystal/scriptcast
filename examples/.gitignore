@@ -3,3 +3,6 @@
 *.cast
 *.gif
 *.png
+
+# README demo image is committed
+!demo.png

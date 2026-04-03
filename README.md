@@ -10,6 +10,10 @@ scriptcast turns a shell script into a reproducible, polished terminal demo — 
 typing animations, multiple scenes, mocked commands, interactive sessions, output
 filtering, and more.
 
+## Demo
+
+![scriptcast demo](examples/demo.png)
+
 ## Table of Contents
 
 - [Background](#background)

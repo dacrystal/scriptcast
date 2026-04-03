@@ -201,3 +201,17 @@ def test_word_speed_applies_to_input_events(tmp_path):
     paths = generate_from_sc_text(sc, tmp_path)
     _, cast = _cast(paths[0])
     assert max(e[0] for e in cast) >= 0.3
+
+
+def test_quoted_prompt_in_pre_scene_set(tmp_path):
+    # bash traces `"$ "` as `'$ '`; shlex.split must handle shell quoting in the
+    # pre-scene directive loop so the cast shows "$ " not "'$"
+    sc = _make_sc(
+        ("directive", "set prompt '$ '"),
+        ("directive", "scene main"),
+        ("cmd", "echo hi"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    prompt_events = [e for e in cast if e[2] == "$ "]
+    assert prompt_events, f"expected '$ ' prompt in cast, got: {cast}"

@@ -9,6 +9,10 @@
 : SC set exit_wait 120
 : SC set width 80
 : SC set height 24
+: SC set prompt "$ "
+: SC set terminal-theme dark
+: SC set input_wait 80
+: SC set enter_wait 80
 
 # ----------------------------------------
 # Scene — Intro
@@ -55,9 +59,21 @@ EOF
 : SC scene filter
 
 : SC filter sed "s#$PWD#<project>#g"
+: SC filter-add sed "s#/home/#/users/#g"
 
 echo "Project root:"
 pwd
+echo "$HOME"
+
+# ----------------------------------------
+# Scene — sleep
+# ----------------------------------------
+: SC scene sleep
+
+: SC '\' Pausing between lines...
+echo "Before pause"
+: SC sleep 800
+echo "After pause"
 
 # ----------------------------------------
 # Scene — Comment

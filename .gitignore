@@ -177,6 +177,3 @@ pyrightconfig.json
 
 # Git worktrees
 .worktrees/
-
-# Local dev tools (agg binary, fonts)
-bin/
