@@ -2,15 +2,20 @@
 from __future__ import annotations
 
 import os
+import platform
 import shlex
+import shutil
 import sys
+import tempfile
+import urllib.request
+import zipfile as _zipfile
 from pathlib import Path
 
 import click
 
 from .config import ScriptcastConfig
+from .export import AggNotFoundError, apply_scriptcast_watermark, generate_export
 from .generator import generate_from_sc
-from .export import AggNotFoundError, generate_export
 from .recorder import record as do_record
 
 
@@ -22,12 +27,10 @@ def _make_config(
     directive_prefix: str,
     trace_prefix: str,
     shell: str | None,
-    title: bool,
 ) -> tuple[ScriptcastConfig, str]:
     config = ScriptcastConfig(
         directive_prefix=directive_prefix,
         trace_prefix=trace_prefix,
-        show_title=title,
     )
     resolved_shell = shell or _default_shell()
     return config, resolved_shell
@@ -73,7 +76,6 @@ class _ScriptOrSubcommandGroup(click.Group):
 @click.option("--output-dir", default=None, type=click.Path())
 @click.option("--directive-prefix", default="SC", show_default=True)
 @click.option("--trace-prefix", default="+", show_default=True)
-@click.option("--title/--no-title", default=False)
 @click.option("--shell", default=None)
 @click.option("--split-scenes/--no-split-scenes", default=False)
 @click.pass_context
@@ -82,7 +84,6 @@ def cli(
     output_dir: str | None,
     directive_prefix: str,
     trace_prefix: str,
-    title: bool,
     shell: str | None,
     split_scenes: bool,
 ) -> None:
@@ -111,13 +112,12 @@ def cli(
     out_dir = Path(output_dir) if output_dir else script_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell, title)
+    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
     sc_path = out_dir / script_path.with_suffix(".sc").name
     do_record(script_path, sc_path, config, resolved_shell)
     generate_from_sc(
         sc_path, out_dir,
         output_stem=script_path.stem,
-        show_title=title,
         split_scenes=split_scenes,
     )
 
@@ -139,7 +139,7 @@ def record(
     script_path = Path(script)
     out_dir = Path(output_dir) if output_dir else script_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell, False)
+    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
     sc_path = out_dir / script_path.with_suffix(".sc").name
     do_record(script_path, sc_path, config, resolved_shell)
     click.echo(f"Recorded: {sc_path}")
@@ -148,20 +148,19 @@ def record(
 @cli.command()
 @click.argument("sc_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
-@click.option("--title/--no-title", default=False)
 @click.option("--split-scenes/--no-split-scenes", default=False)
-def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bool) -> None:
+def generate(sc_file: str, output_dir: str | None, split_scenes: bool) -> None:
     """Stage 2: read .sc and write .cast file(s)."""
     sc_path = Path(sc_file)
     out_dir = Path(output_dir) if output_dir else sc_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = generate_from_sc(sc_path, out_dir, show_title=title, split_scenes=split_scenes)
+    paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes)
     for p in paths:
         click.echo(f"Generated: {p}")
 
 
 @cli.command()
-@click.argument("sc_file", type=click.Path(exists=True))
+@click.argument("input_file", type=click.Path(exists=True))
 @click.option("--output-dir", default=None, type=click.Path())
 @click.option("--theme", default=None,
               help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")
@@ -172,39 +171,65 @@ def generate(sc_file: str, output_dir: str | None, title: bool, split_scenes: bo
     show_default=True,
     help="Output format.",
 )
+@click.option("--directive-prefix", default="SC", show_default=True)
+@click.option("--trace-prefix", default="+", show_default=True)
+@click.option("--shell", default=None)
 def export(
-    sc_file: str,
+    input_file: str,
     output_dir: str | None,
     theme: str | None,
     output_format: str,
+    directive_prefix: str,
+    trace_prefix: str,
+    shell: str | None,
 ) -> None:
-    """Generate GIFs or APNGs from .sc files."""
+    """Generate GIFs or APNGs from .sc, .cast, or .sh files."""
     from .config import FrameConfig, ScriptcastConfig
-    from .export import apply_scriptcast_watermark
     from .theme import apply_theme_to_configs, load_theme, scan_sc_for_theme
 
-    sc_path = Path(sc_file)
-    out_dir = Path(output_dir) if output_dir else sc_path.parent
+    in_path = Path(input_file)
+    suffix = in_path.suffix.lower()
+    out_dir = Path(output_dir) if output_dir else in_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if suffix not in (".sc", ".cast", ".sh"):
+        raise click.UsageError(
+            f"Unsupported file type '{suffix}'. Expected .sc, .cast, or .sh."
+        )
 
     frame_config = FrameConfig()
 
-    sc_theme = scan_sc_for_theme(sc_path)
-    if sc_theme:
-        dummy_sc = ScriptcastConfig()
-        apply_theme_to_configs(sc_theme, frame_config, dummy_sc)
+    # For .sh: record first to produce a .sc file
+    sc_path: Path | None = None
+    if suffix == ".sh":
+        config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
+        sc_path = out_dir / in_path.with_suffix(".sc").name
+        do_record(in_path, sc_path, config, resolved_shell)
+    elif suffix == ".sc":
+        sc_path = in_path
+
+    # Theme loading from .sc (not applicable for .cast)
+    if sc_path is not None and sc_path.exists():
+        sc_theme = scan_sc_for_theme(sc_path)
+        if sc_theme:
+            dummy_sc = ScriptcastConfig()  # theme recorder-config fields are unused in export
+            apply_theme_to_configs(sc_theme, frame_config, dummy_sc)
 
     if theme:
-        dummy_sc = ScriptcastConfig()
+        dummy_sc = ScriptcastConfig()  # theme recorder-config fields are unused in export
         try:
             theme_dict = load_theme(theme)
         except FileNotFoundError as e:
             raise click.ClickException(str(e))
         apply_theme_to_configs(theme_dict, frame_config, dummy_sc)
 
-    paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
+    # Resolve cast file list
+    if suffix == ".cast":
+        cast_paths = [in_path]
+    else:
+        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=True)
 
-    for cast_path in paths:
+    for cast_path in cast_paths:
         try:
             export_path = generate_export(
                 cast_path,
@@ -218,29 +243,80 @@ def export(
         click.echo(f"Generated: {export_path}")
 
 
-@cli.command(name="gif", hidden=True)
-@click.argument("sc_file", type=click.Path(exists=True))
-@click.option("--output-dir", default=None, type=click.Path())
-@click.option("--theme", default=None)
-@click.option("--format", "output_format", default="gif",
-              type=click.Choice(["gif", "apng"]))
-@click.pass_context
-def gif(
-    ctx: click.Context,
-    sc_file: str,
-    output_dir: str | None,
-    theme: str | None,
-    output_format: str,
-) -> None:
-    """Deprecated: use 'export' instead."""
-    click.echo("Warning: 'gif' is deprecated. Use 'export' instead.", err=True)
-    ctx.invoke(
-        export,
-        sc_file=sc_file,
-        output_dir=output_dir,
-        theme=theme,
-        output_format=output_format,
+@cli.command()
+@click.option(
+    "--prefix",
+    default=str(Path.home() / ".local" / "bin"),
+    show_default=True,
+    help="Installation directory for agg and fonts.",
+)
+def install(prefix: str) -> None:
+    """Install the agg binary and JetBrains Mono fonts."""
+    prefix_path = Path(prefix).expanduser()
+    prefix_path.mkdir(parents=True, exist_ok=True)
+    fonts_dir = prefix_path / "fonts"
+    fonts_dir.mkdir(exist_ok=True)
+
+    machine = platform.machine().lower()
+    if sys.platform == "linux":
+        if machine == "x86_64":
+            agg_asset = "agg-x86_64-unknown-linux-gnu"
+        elif machine in ("aarch64", "arm64"):
+            agg_asset = "agg-aarch64-unknown-linux-gnu"
+        else:
+            raise click.ClickException(f"Unsupported Linux architecture: {machine}")
+    elif sys.platform == "darwin":
+        if machine in ("arm64", "aarch64"):
+            agg_asset = "agg-aarch64-apple-darwin"
+        else:
+            agg_asset = "agg-x86_64-apple-darwin"
+    else:
+        raise click.ClickException(f"Unsupported OS: {sys.platform}")
+
+    agg_url = f"https://github.com/asciinema/agg/releases/latest/download/{agg_asset}"
+
+    import json as _json
+    with urllib.request.urlopen(
+        "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest"
+    ) as _resp:
+        _release = _json.loads(_resp.read())
+    font_url = next(
+        a["browser_download_url"]
+        for a in _release["assets"]
+        if a["name"].endswith(".zip") and "JetBrainsMono" in a["name"]
     )
+
+    agg_bin = prefix_path / ".agg-real"
+    click.echo("Downloading agg ...")
+    urllib.request.urlretrieve(agg_url, agg_bin)
+    agg_bin.chmod(0o755)
+
+    agg_wrapper = prefix_path / "agg"
+    agg_wrapper.write_text(
+        '#!/bin/sh\n'
+        'exec "$(dirname "$0")/.agg-real"'
+        ' --font-dir "$(dirname "$0")/fonts"'
+        ' --font-family "JetBrains Mono"'
+        ' "$@"\n'
+    )
+    agg_wrapper.chmod(0o755)
+
+    click.echo("Downloading JetBrains Mono fonts ...")
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+        zip_path = Path(tf.name)
+    try:
+        urllib.request.urlretrieve(font_url, zip_path)
+        with _zipfile.ZipFile(zip_path) as zf:
+            for name in zf.namelist():
+                if name.startswith("fonts/ttf/") and name.endswith(".ttf"):
+                    (fonts_dir / Path(name).name).write_bytes(zf.read(name))
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+    click.echo(f"Installed to {prefix_path}")
+    if shutil.which("agg") is None:
+        click.echo(f"Warning: {prefix_path} is not in PATH. Add it to use agg directly:", err=True)
+        click.echo(f'  export PATH="{prefix_path}:$PATH"', err=True)
 
 
 if __name__ == "__main__":

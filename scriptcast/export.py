@@ -318,7 +318,7 @@ def _build_chrome(
     return chrome, mask
 
 
-def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
+def _apply_watermark(base: PILImage, config: FrameConfig, margin_bottom: int = 0) -> PILImage:
     if config.watermark is None:
         return base
 
@@ -342,7 +342,11 @@ def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
             font = ImageFont.load_default()
 
     x = base.width // 2
-    y = base.height - 22 - font_size // 2
+    y = (
+        base.height - margin_bottom // 2
+        if margin_bottom > 0
+        else base.height - 22 - font_size // 2
+    )
     draw.text(
         (x, y),
         config.watermark,
@@ -508,6 +512,7 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
 
     content_w, content_h = frames[0].size
     layout = build_layout(content_w, content_h, config)
+    _, _, resolved_mb, _ = _resolve_margin_sides(config)
     bg_shadow = _build_bg_shadow(layout, config)
     chrome, content_mask = _build_chrome(layout, config, window_bg=terminal_bg)
 
@@ -520,7 +525,7 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
         content_canvas = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
         content_canvas.paste(frame, (layout.content_x, layout.content_y))
         canvas = Image.composite(content_canvas, canvas, content_mask)
-        canvas = _apply_watermark(canvas, config)
+        canvas = _apply_watermark(canvas, config, margin_bottom=resolved_mb)
         canvas = _apply_scriptcast_watermark(canvas, config)
         rgba_frames.append(canvas)
 

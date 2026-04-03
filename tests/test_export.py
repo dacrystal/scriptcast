@@ -87,11 +87,11 @@ def test_layout_border_shifts_window_and_canvas():
     assert layout.half_bw == 5.0
     assert layout.window_x == 5.0
     assert layout.window_y == 5.0
-    # canvas = 0 + 5 + 200 + 5 + 0 = 210
-    assert layout.canvas_w == 210
-    assert layout.canvas_h == 138   # 5 + 128 + 5
-    # content_x = window_x = 5
-    assert layout.content_x == 5
+    # canvas = 5 + 220 + 5 = 230 (border expands window_w from 200 to 220)
+    assert layout.canvas_w == 230
+    assert layout.canvas_h == 148   # 5 + 138 + 5 (border expands window_h from 128 to 138)
+    # content_x = window_x + left_padding = 5 + 10 = 15
+    assert layout.content_x == 15
     assert layout.content_y == int(5 + 28)   # 33
 
 
@@ -705,7 +705,7 @@ def test_export_command_no_frame_passes_none(tmp_path):
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
         with patch("scriptcast.__main__.generate_export", return_value=fake_gif) as mock_exp:
-            with patch("scriptcast.export.apply_scriptcast_watermark"):
+            with patch("scriptcast.__main__.apply_scriptcast_watermark"):
                 result = runner.invoke(cli, ["export", str(sc_file),
                                              "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
@@ -731,15 +731,6 @@ def test_export_command_error_is_clean(tmp_path):
                                          "--output-dir", str(tmp_path)])
     assert result.exit_code == 1
     assert "Pillow not installed" in result.output
-
-
-def test_gif_alias_still_works(tmp_path):
-    """'gif' subcommand still exists for backwards compatibility."""
-    from click.testing import CliRunner
-    from scriptcast.__main__ import cli
-    runner = CliRunner()
-    result = runner.invoke(cli, ["gif", "--help"])
-    assert result.exit_code == 0
 
 
 def test_apply_export_content_visible_in_content_area(tmp_path):
@@ -770,3 +761,22 @@ def test_apply_export_content_visible_in_content_area(tmp_path):
     r, g, b, a = result.getpixel((cx, cy))
     # Content (red) must be visible at the content centre
     assert r > 200 and g < 50 and b < 50
+
+
+def test_apply_watermark_centered_in_margin():
+    """With margin_bottom set, watermark position differs from the no-margin default."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _apply_watermark
+
+    img = Image.new("RGBA", (400, 300), (30, 30, 30, 255))
+    config = FrameConfig(watermark="test", watermark_size=20)
+
+    result_with_margin = _apply_watermark(img, config, margin_bottom=82)
+    result_no_margin = _apply_watermark(img, config, margin_bottom=0)
+
+    assert result_with_margin.size == (400, 300)
+    assert result_no_margin.size == (400, 300)
+    # Different margin_bottom values must produce different watermark positions
+    assert result_with_margin.tobytes() != result_no_margin.tobytes()
