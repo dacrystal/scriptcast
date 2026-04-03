@@ -4,6 +4,7 @@
 # Global config
 # ----------------------------------------
 : SC set type_speed 40
+: SC set word_speed 100
 : SC set cmd_wait 80
 : SC set exit_wait 120
 : SC set width 80

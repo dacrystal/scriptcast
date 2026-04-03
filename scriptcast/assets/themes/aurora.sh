@@ -1,14 +1,12 @@
-# scriptcast built-in theme: dark
+# scriptcast built-in theme: aurora
 : SC set terminal-theme dark
 : SC set theme-frame true
 : SC set theme-frame-bar true
 : SC set theme-frame-bar-title Terminal
-: SC set theme-frame-bar-color ffffff30
+: SC set theme-frame-bar-color 252535
 : SC set theme-frame-bar-buttons true
-: SC set theme-watermark Demo
-# : SC set theme-watermark-color ffffff
 : SC set theme-scriptcast-watermark true
-: SC set theme-background 1a1a2e,16213e
+: SC set theme-background 1e1b4b,0d3b66
 : SC set theme-margin 32 32 64
 : SC set theme-padding 14
 : SC set theme-radius 12

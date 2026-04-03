@@ -61,11 +61,11 @@ class FrameConfig:
 
     # Window appearance
     radius: int = 12
-    border_color: str = "#ffffff30"   # RGBA hex
+    border_color: str = "ffffff30"   # RGBA hex, no # prefix
     border_width: int = 1
 
     # Outer background (None = no background)
-    background: str | None = None     # "#hex" or "#hex1,#hex2" gradient
+    background: str | None = "1e1b4b,0d3b66"  # aurora gradient
 
     # Outer margins — individual sides (None = auto: 0 if no bg, 82 if bg set)
     margin_top: int | None = None
@@ -75,7 +75,7 @@ class FrameConfig:
 
     # Drop shadow
     shadow: bool = True
-    shadow_color: str = "#0000004d"   # RGBA hex
+    shadow_color: str = "0000004d"   # RGBA hex, no # prefix
     shadow_radius: int = 20
     shadow_offset_y: int = 21
     shadow_offset_x: int = 0
@@ -83,16 +83,16 @@ class FrameConfig:
     # Title bar
     frame_bar: bool = True
     frame_bar_title: str = ""
-    frame_bar_color: str = "#252535"
+    frame_bar_color: str = "252535"
     frame_bar_buttons: bool = True
 
     # Watermark (opt-in)
     watermark: str | None = None
-    watermark_color: str = "#ffffff"
+    watermark_color: str = "ffffff"
     watermark_size: int | None = None
 
     # Frame style
-    frame: bool = False
+    frame: bool = True
 
     # Scriptcast brand watermark (opt-out)
     scriptcast_watermark: bool = True

@@ -175,6 +175,7 @@ def _render_scene_lines(
 
         elif typ == "cmd":
             lines.append(json.dumps([round(cursor, 6), "o", active.prompt]))
+            cursor += active.cmd_wait / 1000.0
             for char in text:
                 cursor += active.type_speed / 1000.0
                 lines.append(json.dumps([round(cursor, 6), "o", char]))
@@ -182,7 +183,6 @@ def _render_scene_lines(
                     cursor += active.effective_word_pause_s
             cursor += active.type_speed / 1000.0
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
-            cursor += active.cmd_wait / 1000.0
 
         elif typ == "output":
             next_typ = queue[0][1] if queue else None
@@ -199,6 +199,7 @@ def _render_scene_lines(
                     cursor += active.effective_word_pause_s
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
+    lines.append(json.dumps([round(cursor, 6), "o", active.prompt]))
     cursor += active.exit_wait / 1000.0
     lines.append(json.dumps([round(cursor, 6), "o", ""]))
     return lines, cursor

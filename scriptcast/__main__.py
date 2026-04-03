@@ -166,8 +166,8 @@ def generate(sc_file: str, output_dir: str | None, split_scenes: bool) -> None:
               help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")
 @click.option(
     "--format", "output_format",
-    default="gif",
-    type=click.Choice(["gif", "apng"]),
+    default="png",
+    type=click.Choice(["gif", "png"]),
     show_default=True,
     help="Output format.",
 )
@@ -183,7 +183,7 @@ def export(
     trace_prefix: str,
     shell: str | None,
 ) -> None:
-    """Generate GIFs or APNGs from .sc, .cast, or .sh files."""
+    """Generate GIF or PNG animations from .sc, .cast, or .sh files."""
     from .config import FrameConfig, ScriptcastConfig
     from .theme import apply_theme_to_configs, load_theme, scan_sc_for_theme
 

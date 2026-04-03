@@ -274,3 +274,21 @@ def test_dark_theme_sets_frame_true():
     fc = FrameConfig()
     apply_theme_to_configs(load_theme("dark"), fc, ScriptcastConfig())
     assert fc.frame is True
+
+
+def test_load_theme_aurora():
+    from scriptcast.theme import load_theme
+    result = load_theme("aurora")
+    assert result.get("theme-background") == "1e1b4b,0d3b66"
+    assert result.get("theme-frame") == "true"
+    assert result.get("theme-frame-bar") == "true"
+    assert result.get("terminal-theme") == "dark"
+
+
+def test_load_theme_light():
+    from scriptcast.theme import load_theme
+    result = load_theme("light")
+    assert result.get("theme-background") == "f0f4ff,e2e8f8"
+    assert result.get("theme-frame") == "true"
+    assert result.get("theme-frame-bar-color") == "e8ecf8"
+    assert result.get("terminal-theme") == "light"

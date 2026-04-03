@@ -15,7 +15,7 @@ def test_frame_config_has_frame_bar_title():
 
 def test_frame_config_frame_bar_color_default():
     from scriptcast.config import FrameConfig
-    assert FrameConfig().frame_bar_color == "#252535"
+    assert FrameConfig().frame_bar_color == "252535"
 
 
 def test_frame_config_frame_bar_buttons_default():
@@ -31,6 +31,25 @@ def test_frame_config_shadow_offset_x_default():
 def test_frame_config_no_title_field():
     from scriptcast.config import FrameConfig
     assert not hasattr(FrameConfig(), "title")
+
+
+def test_frame_config_default_background_is_aurora():
+    from scriptcast.config import FrameConfig
+    assert FrameConfig().background == "1e1b4b,0d3b66"
+
+
+def test_frame_config_default_frame_is_true():
+    from scriptcast.config import FrameConfig
+    assert FrameConfig().frame is True
+
+
+def test_frame_config_default_colors_have_no_hash():
+    from scriptcast.config import FrameConfig
+    cfg = FrameConfig()
+    assert not cfg.border_color.startswith("#")
+    assert not cfg.frame_bar_color.startswith("#")
+    assert not cfg.shadow_color.startswith("#")
+    assert not cfg.watermark_color.startswith("#")
 
 
 # ------------------------------------------------------------------ Layout
@@ -558,7 +577,7 @@ def test_apply_export_gif_produces_gif(tmp_path):
     assert img.format in ("GIF",)
 
 
-def test_apply_export_apng_produces_png(tmp_path):
+def test_apply_export_png_produces_png_file(tmp_path):
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
     from scriptcast.export import apply_export
@@ -566,7 +585,7 @@ def test_apply_export_apng_produces_png(tmp_path):
     _make_tiny_gif(gif, 40, 20)
     config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=False,
                          scriptcast_watermark=False)
-    apply_export(gif, config, format="apng")
+    apply_export(gif, config, format="png")
     png = tmp_path / "out.png"
     assert png.exists()
 
@@ -617,9 +636,9 @@ def test_generate_export_calls_agg(tmp_path):
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
     cast_file.write_text('{"version":2}\n')
-    with patch("subprocess.run") as mock_run:
+    with patch("scriptcast.export.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0)
-        with patch("shutil.which", return_value="/usr/bin/agg"):
+        with patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"):
             result = generate_export(cast_file)
     mock_run.assert_called_once()
     args = mock_run.call_args[0][0]
@@ -644,19 +663,29 @@ def test_generate_export_calls_apply_export_when_config_provided(tmp_path):
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
     cast_file.write_text('{"version":2}\n')
-    gif_file = tmp_path / "scene.gif"
     config = FrameConfig()
 
     def fake_run(*args, **kwargs):
-        gif_file.write_bytes(b"GIF89a")
+        # Write to the temp gif path that agg would write to (second arg)
+        import os
+        from PIL import Image
+        temp_path = args[0][2]  # The temp gif path is the third argument to agg
+        frame = Image.new("RGB", (80, 24), (30, 30, 30))
+        frame.save(temp_path, format="GIF")
         return MagicMock(returncode=0)
 
-    with patch("shutil.which", return_value="/usr/bin/agg"):
-        with patch("subprocess.run", side_effect=fake_run):
+    with patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"):
+        with patch("scriptcast.export.subprocess.run", side_effect=fake_run):
             with patch("scriptcast.export.apply_export") as mock_apply:
-                generate_export(cast_file, config)
+                result = generate_export(cast_file, config)
 
-    mock_apply.assert_called_once_with(gif_file, config, format="gif")
+    # apply_export should be called once with config and format
+    mock_apply.assert_called_once()
+    call_args = mock_apply.call_args
+    assert call_args[0][1] == config
+    assert call_args[1]["format"] == "gif"
+    # Result should be the final gif path in the cast directory
+    assert result == tmp_path / "scene.gif"
 
 
 def test_generate_export_skips_apply_export_when_no_config(tmp_path):
@@ -676,6 +705,40 @@ def test_generate_export_skips_apply_export_when_no_config(tmp_path):
     mock_apply.assert_not_called()
 
 
+def test_generate_export_png_format_no_temp_files_in_cast_dir(tmp_path):
+    """format='png': final .png is in cast dir, no temp gifs or pngs left behind."""
+    from unittest.mock import patch, MagicMock
+    from scriptcast.export import generate_export, apply_export
+    from scriptcast.config import FrameConfig
+
+    cast_path = tmp_path / "demo.cast"
+    cast_path.write_text('{"version":2,"width":80,"height":24}\n')
+
+    def fake_agg(cmd, **kwargs):
+        from PIL import Image
+        frame = Image.new("RGB", (80, 24), (30, 30, 30))
+        frame.save(str(cmd[2]), format="GIF")
+
+    def fake_apply_export(gif_path, config, format):
+        # Simulate what apply_export does: write .png next to the gif
+        from PIL import Image
+        frame = Image.new("RGBA", (80, 24), (30, 30, 30, 255))
+        out = gif_path.with_suffix(".png")
+        frame.save(str(out), format="PNG")
+
+    config = FrameConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
+    with patch("scriptcast.export.subprocess.run", side_effect=fake_agg), \
+         patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"), \
+         patch("scriptcast.export.apply_export", side_effect=fake_apply_export):
+        result = generate_export(cast_path, frame_config=config, format="png")
+
+    assert result == tmp_path / "demo.png"
+    assert (tmp_path / "demo.png").exists()
+    # No stray temp files in cast dir
+    assert not list(tmp_path.glob("*.gif"))
+    assert len(list(tmp_path.glob("*.png"))) == 1
+
+
 # ------------------------------------------------------------------ CLI: export command
 def _sc_content() -> str:
     import json
@@ -692,10 +755,11 @@ def test_export_command_exists():
     assert "export" in result.output.lower() or "agg" in result.output.lower()
 
 
-def test_export_command_no_frame_passes_none(tmp_path):
+def test_export_command_default_frame_passes_config(tmp_path):
     from unittest.mock import patch
     from click.testing import CliRunner
     from scriptcast.__main__ import cli
+    from scriptcast.config import FrameConfig
 
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(_sc_content())
@@ -709,7 +773,7 @@ def test_export_command_no_frame_passes_none(tmp_path):
                 result = runner.invoke(cli, ["export", str(sc_file),
                                              "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert mock_exp.call_args[0][1] is None
+    assert isinstance(mock_exp.call_args[0][1], FrameConfig)
 
 
 def test_export_command_error_is_clean(tmp_path):
@@ -751,7 +815,7 @@ def test_apply_export_content_visible_in_content_area(tmp_path):
         padding_top=0, padding_bottom=0,
         scriptcast_watermark=False,
     )
-    apply_export(gif, config, format="apng")
+    apply_export(gif, config, format="png")
     png = tmp_path / "red.png"
     result = Image.open(png).convert("RGBA")
 
@@ -780,3 +844,80 @@ def test_apply_watermark_centered_in_margin():
     assert result_no_margin.size == (400, 300)
     # Different margin_bottom values must produce different watermark positions
     assert result_with_margin.tobytes() != result_no_margin.tobytes()
+
+
+def test_apply_export_png_format_writes_png_file(tmp_path):
+    """apply_export with format='png' writes a PNG file with RGBA (not quantized palette)."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.export import apply_export
+    from scriptcast.config import FrameConfig
+
+    # Create a minimal single-frame GIF
+    frame = Image.new("RGBA", (80, 24), (30, 30, 30, 255))
+    gif_path = tmp_path / "test.gif"
+    frame.convert("RGB").save(str(gif_path), format="GIF")
+
+    config = FrameConfig(frame=False, scriptcast_watermark=False, shadow=False, background=None)
+    apply_export(gif_path, config, format="png")
+
+    # Should write to test.png
+    png_path = tmp_path / "test.png"
+    assert png_path.exists(), "format='png' should write .png file"
+
+    # The output should be RGBA PNG (not quantized palette mode P)
+    output = Image.open(png_path)
+    # format='png' must produce full RGBA, not a quantized palette mode
+    assert output.mode == "RGBA", f"Expected RGBA PNG but got mode {output.mode}"
+
+
+def test_generate_export_no_temp_gif_left_in_cast_dir(tmp_path):
+    """Intermediate .gif from agg must not be left in the cast directory."""
+    from unittest.mock import patch
+    from scriptcast.export import generate_export
+
+    cast_path = tmp_path / "demo.cast"
+    cast_path.write_text('{"version":2,"width":80,"height":24}\n')
+
+    def fake_agg(cmd, check):
+        # Write a minimal gif to the path agg would write to (second arg)
+        from PIL import Image
+        frame = Image.new("RGB", (80, 24), (30, 30, 30))
+        frame.save(str(cmd[2]), format="GIF")
+
+    with patch("scriptcast.export.subprocess.run", side_effect=fake_agg), \
+         patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"):
+        generate_export(cast_path, frame_config=None, format="gif")
+
+    # Only the final .gif should exist; no stray temp files in cast dir
+    files_in_dir = list(tmp_path.glob("*.gif"))
+    assert len(files_in_dir) == 1
+    assert files_in_dir[0] == tmp_path / "demo.gif"
+
+
+def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
+    """Temp gif is cleaned up even when agg succeeds but processing fails."""
+    from unittest.mock import patch
+    from scriptcast.export import generate_export
+    from scriptcast.config import FrameConfig
+
+    cast_path = tmp_path / "demo.cast"
+    cast_path.write_text('{"version":2,"width":80,"height":24}\n')
+
+    def fake_agg(cmd, check):
+        from PIL import Image
+        frame = Image.new("RGB", (80, 24), (30, 30, 30))
+        frame.save(str(cmd[2]), format="GIF")
+
+    config = FrameConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
+
+    with patch("scriptcast.export.subprocess.run", side_effect=fake_agg), \
+         patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"), \
+         patch("scriptcast.export.apply_export", side_effect=RuntimeError("boom")):
+        try:
+            generate_export(cast_path, frame_config=config, format="gif")
+        except RuntimeError:
+            pass
+
+    # No temp gifs should be left in the cast directory
+    assert not any(tmp_path.glob("*.gif"))

@@ -228,6 +228,43 @@ def test_install_command_has_prefix_option():
     assert "prefix" in param_names
 
 
+def test_export_default_format_is_png():
+    """export --format default is 'png', not 'gif'."""
+    from scriptcast.__main__ import export
+    param = next(p for p in export.params if p.name == "output_format")
+    assert param.default == "png"
+
+
+def test_export_format_png_accepted(tmp_path):
+    """--format png is a valid choice."""
+    import json
+    from unittest.mock import patch
+    from click.testing import CliRunner
+    from scriptcast.__main__ import cli
+
+    cast = tmp_path / "demo.cast"
+    cast.write_text(json.dumps({"version": 2, "width": 80, "height": 24}) + "\n")
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_export", return_value=cast), \
+         patch("scriptcast.__main__.apply_scriptcast_watermark"):
+        result = runner.invoke(cli, ["export", str(cast), "--format", "png"])
+    assert result.exit_code == 0, result.output
+
+
+def test_export_format_apng_rejected(tmp_path):
+    """--format apng is no longer a valid choice."""
+    import json
+    from click.testing import CliRunner
+    from scriptcast.__main__ import cli
+
+    cast = tmp_path / "demo.cast"
+    cast.write_text(json.dumps({"version": 2, "width": 80, "height": 24}) + "\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export", str(cast), "--format", "apng"])
+    assert result.exit_code != 0
+    assert "apng" in result.output or "invalid" in result.output.lower()
+
+
 def test_install_downloads_agg_and_fonts(tmp_path):
     import io, json, zipfile
     from unittest.mock import MagicMock, patch

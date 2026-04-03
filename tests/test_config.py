@@ -91,23 +91,23 @@ def test_frame_config_defaults():
     assert c.padding_bottom == 14
     assert c.padding_left == 14
     assert c.radius == 12
-    assert c.border_color == "#ffffff30"
+    assert c.border_color == "ffffff30"
     assert c.border_width == 1
-    assert c.background is None
+    assert c.background == "1e1b4b,0d3b66"
     # Individual margin sides
     assert c.margin_top is None
     assert c.margin_right is None
     assert c.margin_bottom is None
     assert c.margin_left is None
     assert c.shadow is True
-    assert c.shadow_color == "#0000004d"
+    assert c.shadow_color == "0000004d"
     assert c.shadow_radius == 20
     assert c.shadow_offset_y == 21
     assert c.watermark is None
-    assert c.watermark_color == "#ffffff"
+    assert c.watermark_color == "ffffff"
     assert c.watermark_size is None
     assert c.scriptcast_watermark is True
-    assert c.frame is False
+    assert c.frame is True
 
 
 def test_frame_config_custom():
@@ -133,9 +133,9 @@ def test_frame_config_custom_margin():
     assert c.margin_left is None
 
 
-def test_frame_config_frame_default_false():
+def test_frame_config_frame_default_true():
     from scriptcast.config import FrameConfig
-    assert FrameConfig().frame is False
+    assert FrameConfig().frame is True
 
 def test_frame_config_frame_true():
     from scriptcast.config import FrameConfig

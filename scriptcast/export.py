@@ -1,8 +1,10 @@
 # scriptcast/export.py
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -481,7 +483,7 @@ def _build_global_palette(
 def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> None:
     """Post-process a GIF in-place: apply background, shadow, chrome, and watermarks.
 
-    format: "gif" writes .gif (quantized 256 colours); "apng" writes .png (full RGBA).
+    format: "gif" writes .gif (quantized 256 colours); "png" writes .png (full RGBA).
     Requires Pillow: pip install 'scriptcast[gif]'
     """
     try:
@@ -493,16 +495,16 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
             "Install with: pip install 'scriptcast[gif]'"
         )
 
-    img = Image.open(gif_path)
     raw_frames: list[Image.Image] = []
     durations: list[int] = []
-    try:
-        while True:
-            raw_frames.append(img.copy().convert("RGBA"))
-            durations.append(img.info.get("duration", 100))
-            img.seek(img.tell() + 1)
-    except EOFError:
-        pass
+    with Image.open(gif_path) as img:
+        try:
+            while True:
+                raw_frames.append(img.copy().convert("RGBA"))
+                durations.append(img.info.get("duration", 100))
+                img.seek(img.tell() + 1)
+        except EOFError:
+            pass
 
     if not raw_frames:
         return
@@ -529,7 +531,7 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
         canvas = _apply_scriptcast_watermark(canvas, config)
         rgba_frames.append(canvas)
 
-    if format == "apng":
+    if format == "png":
         rgba_frames[0].save(
             output_path,
             format="PNG",
@@ -561,12 +563,13 @@ def generate_export(
     frame_config: FrameConfig | None = None,
     format: str = "gif",
 ) -> Path:
-    """Convert a .cast file to GIF or APNG using agg, then apply frame if configured.
+    """Convert a .cast file to GIF or PNG using agg, then apply frame if configured.
 
     Raises AggNotFoundError if agg is not installed.
     Install: https://github.com/asciinema/agg
 
-    format: "gif" (default) writes .gif; "apng" writes .png (full RGBA).
+    format: "gif" writes .gif; "png" writes .png (full RGBA). Default here is "gif"
+    for API backward compatibility — the CLI defaults to "png".
     Requires Pillow: pip install 'scriptcast[gif]'
     """
     agg = shutil.which("agg")
@@ -575,13 +578,35 @@ def generate_export(
             "agg not found. Install from: https://github.com/asciinema/agg"
         )
     cast_path = Path(cast_path)
-    gif_path = cast_path.with_suffix(".gif")
-    subprocess.run([agg, str(cast_path), str(gif_path)], check=True)
 
-    if frame_config is not None:
-        apply_export(gif_path, frame_config, format=format)
-        output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
-    else:
-        output_path = gif_path
+    tmp_fd, tmp_gif_str = tempfile.mkstemp(suffix=".gif")
+    os.close(tmp_fd)
+    tmp_gif_path = Path(tmp_gif_str)
+
+    try:
+        subprocess.run([agg, str(cast_path), str(tmp_gif_path)], check=True)
+
+        if frame_config is not None:
+            apply_export(tmp_gif_path, frame_config, format=format)
+            if format == "gif":
+                final_path = cast_path.with_suffix(".gif")
+                shutil.move(str(tmp_gif_path), str(final_path))
+                output_path = final_path
+            else:  # png
+                tmp_png_path = tmp_gif_path.with_suffix(".png")
+                final_path = cast_path.with_suffix(".png")
+                shutil.move(str(tmp_png_path), str(final_path))
+                tmp_gif_path.unlink()  # consumed by apply_export
+                output_path = final_path
+        else:
+            final_path = cast_path.with_suffix(".gif")
+            shutil.move(str(tmp_gif_path), str(final_path))
+            output_path = final_path
+    finally:
+        if tmp_gif_path.exists():
+            tmp_gif_path.unlink()
+        tmp_png = tmp_gif_path.with_suffix(".png")
+        if tmp_png.exists():
+            tmp_png.unlink()
 
     return output_path
