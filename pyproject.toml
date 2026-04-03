@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
+    "pillow>=9.0",
 ]
 
 [project.scripts]
@@ -32,10 +33,6 @@ dev = [
     "pytest-cov",
     "ruff>=0.4",
     "mypy>=1.10",
-]
-gif = [
-    "pillow>=9.0",
-    "cairosvg>=2.7",
 ]
 
 [tool.setuptools.packages.find]
@@ -63,10 +60,6 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["PIL", "PIL.*"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["cairosvg"]
 ignore_missing_imports = true
 
 # Entry-point group for third-party directives. See DIRECTIVES.md.

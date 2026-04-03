@@ -1,7 +1,6 @@
 # scriptcast/export.py
 from __future__ import annotations
 
-import io
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -16,12 +15,6 @@ try:
 except ImportError:
     PILImage = object  # type: ignore[assignment,misc]
 
-try:
-    import cairosvg as _cairosvg
-    _svg_available = True
-except (ImportError, OSError):
-    _cairosvg = None
-    _svg_available = False
 
 TITLE_BAR_HEIGHT = 28
 _PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
@@ -49,15 +42,6 @@ def _hex_rgba(hex_color: str) -> tuple[int, int, int, int]:
     a = int(h[6:8], 16) if len(h) == 8 else 255
     return (r, g, b, a)
 
-
-def _split_rgba(hex_color: str) -> tuple[str, float]:
-    """Return (#rrggbb, opacity_float) from a 6- or 8-char hex string."""
-    h = hex_color.lstrip("#")
-    if len(h) not in (6, 8):
-        raise ValueError(f"_split_rgba expects 6 or 8 hex digits, got {len(h)} in {hex_color!r}")
-    if len(h) == 8:
-        return f"#{h[:6]}", int(h[6:8], 16) / 255.0
-    return f"#{h}", 1.0
 
 
 @dataclass
@@ -178,39 +162,49 @@ def _build_bg_shadow(layout: Layout, config: FrameConfig) -> PILImage:
     return Image.alpha_composite(base, shadow_canvas)
 
 
-def _draw_gradient_circle(
-    img: PILImage,
-    cx: int,
-    cy: int,
-    radius: int,
-    base_color: str,
-    highlight_color: str,
-) -> None:
-    from PIL import Image, ImageDraw
+def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
+    from PIL import Image
+    import math
 
-    steps = 8
     base = _hex_rgba(base_color)
     highlight = _hex_rgba(highlight_color)
-    offset_x = int(radius * 0.20)
 
-    for i in range(steps, 0, -1):
-        t = i / steps
-        r = int(base[0] * t + highlight[0] * (1 - t))
-        g = int(base[1] * t + highlight[1] * (1 - t))
-        b = int(base[2] * t + highlight[2] * (1 - t))
-        circle_r = int(radius * (i + 1) / (steps + 1))
-        shift = int((1 - t) * offset_x)
-        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(layer)
-        draw.ellipse(
-            [cx - circle_r - shift, cy - circle_r - shift,
-             cx + circle_r - shift, cy + circle_r - shift],
-            fill=(r, g, b, 255),
-        )
-        img.paste(layer, (0, 0), layer)
+    # supersampling factor (anti-aliasing)
+    scale = 4
+    size = radius * 2 * scale
+
+    highres = Image.new("RGBA", (size, size))
+    px = highres.load()
+
+    for y in range(size):
+        for x in range(size):
+            dx = (x + 0.5) / scale - radius
+            dy = (y + 0.5) / scale - radius
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist <= radius:
+                t = dist / radius
+                r = int(highlight[0] * (1 - t) + base[0] * t)
+                g = int(highlight[1] * (1 - t) + base[1] * t)
+                b = int(highlight[2] * (1 - t) + base[2] * t)
+                a = int(highlight[3] * (1 - t) + base[3] * t)
+                px[x, y] = (r, g, b, a)
+            else:
+                px[x, y] = (0, 0, 0, 0)
+
+    # downscale with high-quality filter
+    circle = highres.resize((radius * 2, radius * 2), Image.LANCZOS)
+
+    img.paste(circle, (cx - radius, cy - radius), circle)
 
 
-def _build_chrome_pil(layout: Layout, config: FrameConfig) -> PILImage:
+def _build_chrome(layout: Layout, config: FrameConfig) -> tuple[PILImage, PILImage]:
+    """Build the window chrome and a content-area mask.
+
+    Returns:
+        chrome: RGBA image — window bg, title bar, traffic lights, border. No transparent hole.
+        mask:   L-mode image — 255 where content is visible, 0 elsewhere.
+    """
     from PIL import Image, ImageDraw
 
     chrome = Image.new("RGBA", (layout.canvas_w, layout.canvas_h), (0, 0, 0, 0))
@@ -222,24 +216,8 @@ def _build_chrome_pil(layout: Layout, config: FrameConfig) -> PILImage:
     wh = layout.window_h
     r = config.radius
 
-    # Window background (rounded rect)
+    # Window background (rounded rect, no hole)
     draw.rounded_rectangle([wx, wy, wx + ww, wy + wh], radius=r, fill=_hex_rgba(_WINDOW_BG))
-
-    # Punch content area transparent — rounded bottom corners, straight top
-    # (matches window's visual bottom corners; top is flat against title bar)
-    r_punch = min(config.radius, layout.content_w // 2, layout.content_h // 2)
-    punch_mask = Image.new("L", chrome.size, 0)
-    punch_draw = ImageDraw.Draw(punch_mask)
-    cx, cy = layout.content_x, layout.content_y
-    cw, ch = layout.content_w, layout.content_h
-    # Full rounded rect (rounds all corners)
-    punch_draw.rounded_rectangle([cx, cy, cx + cw - 1, cy + ch - 1], radius=r_punch, fill=255)
-    # Flatten top corners by overdrawing over the top r_punch rows
-    if r_punch > 0:
-        punch_draw.rectangle([cx, cy, cx + cw - 1, cy + r_punch], fill=255)
-    # Apply: where punch_mask=255 (white), use transparent; where 0, keep chrome
-    transparent_canvas = Image.new("RGBA", chrome.size, (0, 0, 0, 0))
-    chrome = Image.composite(transparent_canvas, chrome, punch_mask)
 
     # Title bar
     if config.frame_bar and layout.title_bar_h > 0:
@@ -258,7 +236,7 @@ def _build_chrome_pil(layout: Layout, config: FrameConfig) -> PILImage:
                                       _LIGHT_RADIUS, base_color, highlight_color)
 
         if config.frame_bar_title:
-            draw = ImageDraw.Draw(chrome)  # re-bind: chrome was replaced by composite
+            draw = ImageDraw.Draw(chrome)
             draw.text(
                 (wx + ww // 2, title_cy),
                 config.frame_bar_title,
@@ -268,7 +246,7 @@ def _build_chrome_pil(layout: Layout, config: FrameConfig) -> PILImage:
 
     # Border
     if config.border_width > 0:
-        draw = ImageDraw.Draw(chrome)  # re-bind: chrome may have been replaced
+        draw = ImageDraw.Draw(chrome)
         draw.rounded_rectangle(
             [wx, wy, wx + ww, wy + wh],
             radius=r,
@@ -276,122 +254,20 @@ def _build_chrome_pil(layout: Layout, config: FrameConfig) -> PILImage:
             width=config.border_width,
         )
 
-    return chrome
+    # Content-area mask
+    cx, cy = layout.content_x, layout.content_y
+    cw, ch = layout.content_w, layout.content_h
+    r_punch = min(r, cw // 2, ch // 2)
 
+    mask = Image.new("L", chrome.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    # Round all 4 corners first
+    mask_draw.rounded_rectangle([cx, cy, cx + cw - 1, cy + ch - 1], radius=r_punch, fill=255)
+    # Square off the top corners when content is not flush with the window top
+    if r_punch > 0 and cy > wy:
+        mask_draw.rectangle([cx, cy, cx + cw - 1, cy + r_punch], fill=255)
 
-def _build_svg(layout: Layout, config: FrameConfig) -> str:
-    import html as _html
-
-    wx = layout.window_x
-    wy = layout.window_y
-    ww = layout.window_w
-    wh = layout.window_h
-    cx = layout.content_x
-    cy = layout.content_y
-    cw = layout.content_w
-    ch = layout.content_h
-    r = config.radius
-    canvas_w = layout.canvas_w
-    canvas_h = layout.canvas_h
-    title_cy = layout.title_cy
-
-    parts: list[str] = []
-    parts.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg"'
-        f' viewBox="0 0 {canvas_w} {canvas_h}"'
-        f' height="{canvas_h}" width="{canvas_w}">'
-    )
-    parts.append("<defs>")
-
-    # Radial gradients for traffic lights
-    for i, (_xoff, base, highlight) in enumerate(_TRAFFIC_LIGHTS):
-        parts.append(
-            f'<radialGradient id="light-{i}" cx="35%" cy="30%" r="65%">'
-            f'<stop offset="0%" stop-color="{highlight}"/>'
-            f'<stop offset="100%" stop-color="{base}"/>'
-            f"</radialGradient>"
-        )
-
-    # Mask that punches content area out of window bg
-    parts.append('<mask id="content-hole">')
-    parts.append(
-        f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}"'
-        f' rx="{r}" ry="{r}" fill="white"/>'
-    )
-    parts.append(
-        f'<rect x="{cx}" y="{cy}" width="{cw}" height="{ch}" fill="black"/>'
-    )
-    parts.append("</mask>")
-
-    # Clip path for title bar rounded top corners
-    if config.frame_bar and layout.title_bar_h > 0:
-        parts.append(
-            f'<clipPath id="window-clip">'
-            f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}"'
-            f' rx="{r}" ry="{r}"/>'
-            f"</clipPath>"
-        )
-
-    parts.append("</defs>")
-
-    # Window background (with content hole)
-    parts.append(
-        f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}"'
-        f' rx="{r}" ry="{r}" fill="{_WINDOW_BG}" mask="url(#content-hole)"/>'
-    )
-
-    # Title bar
-    if config.frame_bar and layout.title_bar_h > 0:
-        bc, ba = _split_rgba(config.frame_bar_color)
-        parts.append(
-            f'<rect x="{wx}" y="{wy}" width="{ww}" height="{layout.title_bar_h}"'
-            f' fill="{bc}" fill-opacity="{ba:.3f}" clip-path="url(#window-clip)"/>'
-        )
-
-        if config.frame_bar_buttons:
-            for i, (x_off, _base, _hl) in enumerate(_TRAFFIC_LIGHTS):
-                lcx = wx + x_off
-                parts.append(
-                    f'<circle cx="{lcx}" cy="{title_cy}" r="{_LIGHT_RADIUS}"'
-                    f' fill="url(#light-{i})"/>'
-                )
-
-        if config.frame_bar_title:
-            tx = wx + ww // 2
-            parts.append(
-                f'<text x="{tx}" y="{title_cy}"'
-                f' fill="{_TITLE_COLOR}"'
-                f' font-family="system-ui,-apple-system,BlinkMacSystemFont,sans-serif"'
-                f' font-size="12" text-anchor="middle" dominant-baseline="middle">'
-                f"{_html.escape(config.frame_bar_title)}</text>"
-            )
-
-    # Border
-    if config.border_width > 0:
-        brc, bra = _split_rgba(config.border_color)
-        parts.append(
-            f'<rect x="{wx}" y="{wy}" width="{ww}" height="{wh}"'
-            f' rx="{r}" ry="{r}" fill="none"'
-            f' stroke="{brc}" stroke-opacity="{bra:.3f}"'
-            f' stroke-width="{config.border_width}"/>'
-        )
-
-    parts.append("</svg>")
-    return "\n".join(parts)
-
-
-def _build_chrome_svg(layout: Layout, config: FrameConfig) -> PILImage:
-    from PIL import Image
-
-    svg_str = _build_svg(layout, config)
-    png_bytes = _cairosvg.svg2png(bytestring=svg_str.encode())
-    return Image.open(io.BytesIO(png_bytes)).convert("RGBA")
-
-
-def _build_chrome(layout: Layout, config: FrameConfig) -> PILImage:
-    if _svg_available:
-        return _build_chrome_svg(layout, config)
-    return _build_chrome_pil(layout, config)
+    return chrome, mask
 
 
 def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
@@ -578,15 +454,17 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
     content_w, content_h = raw_frames[0].size
     layout = build_layout(content_w, content_h, config)
     bg_shadow = _build_bg_shadow(layout, config)
-    chrome = _build_chrome(layout, config)
+    chrome, content_mask = _build_chrome(layout, config)
 
     output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
 
     rgba_frames = []
     for raw in raw_frames:
         canvas = bg_shadow.copy()
-        canvas.paste(raw, (layout.content_x, layout.content_y))
         canvas = Image.alpha_composite(canvas, chrome)
+        content_canvas = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        content_canvas.paste(raw, (layout.content_x, layout.content_y))
+        canvas = Image.composite(content_canvas, canvas, content_mask)
         canvas = _apply_watermark(canvas, config)
         canvas = _apply_scriptcast_watermark(canvas, config)
         rgba_frames.append(canvas)

@@ -183,33 +183,15 @@ def test_resolve_margin_sides_partial_override():
     assert t == 82 and r == 82 and b == 120 and l == 82
 
 
-# ------------------------------------------------------------------ _split_rgba
-def test_split_rgba_six_chars_returns_full_opacity():
-    from scriptcast.export import _split_rgba
-    color, opacity = _split_rgba("#ff5f57")
-    assert color == "#ff5f57"
-    assert opacity == 1.0
+# ------------------------------------------------------------------ removal guards
+def test_split_rgba_removed():
+    with pytest.raises(ImportError):
+        from scriptcast.export import _split_rgba
 
 
-def test_split_rgba_eight_chars_extracts_opacity():
-    from scriptcast.export import _split_rgba
-    color, opacity = _split_rgba("#0000004d")
-    assert color == "#000000"
-    assert abs(opacity - 77 / 255.0) < 0.001
-
-
-def test_split_rgba_fully_transparent():
-    from scriptcast.export import _split_rgba
-    color, opacity = _split_rgba("#ffffff00")
-    assert color == "#ffffff"
-    assert opacity == 0.0
-
-
-def test_split_rgba_fully_opaque_8_char():
-    from scriptcast.export import _split_rgba
-    color, opacity = _split_rgba("#ffffffff")
-    assert color == "#ffffff"
-    assert opacity == 1.0
+def test_build_svg_removed():
+    with pytest.raises(ImportError):
+        from scriptcast.export import _build_svg
 
 
 # ------------------------------------------------------------------ _build_bg_shadow
@@ -298,199 +280,159 @@ def test_bg_shadow_disabled_no_change():
     assert r1.tobytes() == r2.tobytes()
 
 
-# ------------------------------------------------------------------ _build_chrome_pil
-def test_chrome_pil_is_rgba_correct_size():
+# ------------------------------------------------------------------ _build_chrome
+def test_chrome_returns_tuple():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
+    from scriptcast.export import _build_chrome, build_layout
     config = FrameConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
-    result = _build_chrome_pil(layout, config)
-    assert result.mode == "RGBA"
-    assert result.size == (layout.canvas_w, layout.canvas_h)
+    result = _build_chrome(layout, config)
+    assert isinstance(result, tuple) and len(result) == 2
 
 
-def test_chrome_pil_content_area_is_transparent():
+def test_chrome_image_is_rgba_correct_size():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
-                         frame_bar=True)
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
-    result = _build_chrome_pil(layout, config)
-    # Center of content area must be fully transparent
+    chrome, mask = _build_chrome(layout, config)
+    assert chrome.mode == "RGBA"
+    assert chrome.size == (layout.canvas_w, layout.canvas_h)
+
+
+def test_chrome_mask_is_L_mode_correct_size():
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0)
+    layout = build_layout(100, 50, config)
+    chrome, mask = _build_chrome(layout, config)
+    assert mask.mode == "L"
+    assert mask.size == (layout.canvas_w, layout.canvas_h)
+
+
+def test_chrome_content_area_has_window_bg_color():
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout, _hex_rgba, _WINDOW_BG
+    config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=True)
+    layout = build_layout(100, 50, config)
+    chrome, mask = _build_chrome(layout, config)
+    # Chrome has NO hole — content area shows the window background colour
     cx = layout.content_x + layout.content_w // 2
     cy = layout.content_y + layout.content_h // 2
-    assert result.getpixel((cx, cy))[3] == 0
+    expected_rgb = _hex_rgba(_WINDOW_BG)[:3]
+    pixel = chrome.getpixel((cx, cy))[:3]
+    assert pixel == expected_rgb
 
 
-def test_chrome_pil_outside_window_is_transparent():
+def test_chrome_outside_window_is_transparent():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
-    config = FrameConfig(background="#aabbcc", shadow=False, border_width=0,
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0,
                          margin_top=40, margin_left=40, margin_right=40, margin_bottom=40)
     layout = build_layout(100, 50, config)
-    result = _build_chrome_pil(layout, config)
-    # Corner pixel (outside window) must be transparent in chrome
-    assert result.getpixel((0, 0))[3] == 0
+    chrome, mask = _build_chrome(layout, config)
+    assert chrome.getpixel((0, 0))[3] == 0
 
 
-def test_chrome_pil_window_bg_area_is_opaque():
+def test_chrome_window_bg_area_is_opaque():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
+    from scriptcast.export import _build_chrome, build_layout
     config = FrameConfig(background=None, shadow=False, border_width=0,
                          frame_bar=False, padding_left=20, padding_right=20,
                          padding_top=20, padding_bottom=20)
     layout = build_layout(100, 50, config)
-    result = _build_chrome_pil(layout, config)
-    # Left padding area (inside window, not content) must be opaque
-    px = int(layout.window_x) + 5   # 5px into window, before content_x
+    chrome, mask = _build_chrome(layout, config)
+    px = int(layout.window_x) + 5
     py = layout.content_y + layout.content_h // 2
-    assert result.getpixel((px, py))[3] == 255
+    assert chrome.getpixel((px, py))[3] == 255
 
 
-def test_chrome_pil_title_bar_absent_when_frame_bar_false():
+def test_chrome_mask_content_center_is_255():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0)
+    layout = build_layout(100, 50, config)
+    chrome, mask = _build_chrome(layout, config)
+    cx = layout.content_x + layout.content_w // 2
+    cy = layout.content_y + layout.content_h // 2
+    assert mask.getpixel((cx, cy)) == 255
+
+
+def test_chrome_mask_outside_content_is_0():
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0,
+                         margin_top=40, margin_left=40, margin_right=40, margin_bottom=40)
+    layout = build_layout(100, 50, config)
+    chrome, mask = _build_chrome(layout, config)
+    # Top-left corner of canvas is well outside the content area
+    assert mask.getpixel((0, 0)) == 0
+
+
+def test_chrome_mask_top_corners_square_with_title_bar():
+    """When there is a title bar the top corners of the content area must be square."""
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0,
+                         frame_bar=True, radius=10)
+    layout = build_layout(200, 100, config)
+    chrome, mask = _build_chrome(layout, config)
+    # Top-left pixel of the content rect should be in the mask (255), not rounded away
+    assert mask.getpixel((layout.content_x, layout.content_y)) == 255
+    # Top-right
+    assert mask.getpixel((layout.content_x + layout.content_w - 1, layout.content_y)) == 255
+
+
+def test_chrome_mask_top_corners_rounded_without_title_bar_and_no_padding():
+    """When content is flush with window top (no title bar, no top padding) top corners round."""
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout
+    config = FrameConfig(background=None, shadow=False, border_width=0,
+                         frame_bar=False, padding_top=0, padding_left=0,
+                         padding_right=0, padding_bottom=0, radius=10)
+    layout = build_layout(200, 100, config)
+    # content_y == window_y when no title bar and no top padding
+    assert layout.content_y == int(layout.window_y)
+    chrome, mask = _build_chrome(layout, config)
+    # The very top-left pixel should be rounded away (0), not square
+    assert mask.getpixel((layout.content_x, layout.content_y)) == 0
+
+
+def test_chrome_title_bar_absent_when_frame_bar_false():
+    pytest.importorskip("PIL")
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _build_chrome, build_layout
     config_on = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=True)
     config_off = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=False)
     layout_on = build_layout(100, 50, config_on)
     layout_off = build_layout(100, 50, config_off)
-    result_on = _build_chrome_pil(layout_on, config_on)
-    result_off = _build_chrome_pil(layout_off, config_off)
-    # With frame_bar=False the canvas is shorter (no title bar height)
-    assert result_off.size[1] < result_on.size[1]
+    chrome_on, _ = _build_chrome(layout_on, config_on)
+    chrome_off, _ = _build_chrome(layout_off, config_off)
+    assert chrome_off.size[1] < chrome_on.size[1]
 
 
-def test_chrome_pil_no_traffic_lights_when_buttons_false():
+def test_chrome_no_traffic_lights_when_buttons_false():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome_pil, build_layout
+    from scriptcast.export import _build_chrome, build_layout
     config_yes = FrameConfig(background=None, shadow=False, border_width=0,
                               frame_bar=True, frame_bar_buttons=True)
     config_no = FrameConfig(background=None, shadow=False, border_width=0,
                              frame_bar=True, frame_bar_buttons=False)
     layout = build_layout(200, 100, config_yes)
-    result_yes = _build_chrome_pil(layout, config_yes)
-    result_no = _build_chrome_pil(layout, config_no)
-    # Traffic light area differs
-    assert result_yes.tobytes() != result_no.tobytes()
-
-
-# ------------------------------------------------------------------ _build_svg
-def test_build_svg_is_string_with_svg_tag():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(background=None, shadow=False)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert isinstance(svg, str)
-    assert svg.lstrip().startswith("<svg")
-    assert 'xmlns="http://www.w3.org/2000/svg"' in svg
-
-
-def test_build_svg_canvas_dimensions():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert f'width="{layout.canvas_w}"' in svg
-    assert f'height="{layout.canvas_h}"' in svg
-
-
-def test_build_svg_has_content_hole_mask():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert "content-hole" in svg
-    assert "<mask" in svg
-
-
-def test_build_svg_three_traffic_lights():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(frame_bar=True, frame_bar_buttons=True)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert svg.count("<circle") == 3
-    assert svg.count("radialGradient") >= 3
-
-
-def test_build_svg_no_traffic_lights_when_buttons_false():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(frame_bar=True, frame_bar_buttons=False)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert "<circle" not in svg
-
-
-def test_build_svg_no_title_bar_when_frame_bar_false():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(frame_bar=False)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert "window-clip" not in svg
-
-
-def test_build_svg_title_text_escaped():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(frame_bar=True, frame_bar_title="foo & <bar>")
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert "foo &amp; &lt;bar&gt;" in svg
-    assert "foo & <bar>" not in svg
-
-
-def test_build_svg_border_present_when_nonzero():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(border_width=2, border_color="#ff0000ff")
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert "stroke=" in svg
-    assert "#ff0000" in svg
-
-
-def test_build_svg_no_border_when_zero():
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_svg, build_layout
-    config = FrameConfig(border_width=0)
-    layout = build_layout(200, 100, config)
-    svg = _build_svg(layout, config)
-    assert 'stroke=' not in svg
-
-
-# ------------------------------------------------------------------ _build_chrome (dispatcher)
-def test_build_chrome_returns_rgba_image():
-    pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
-    layout = build_layout(100, 50, config)
-    result = _build_chrome(layout, config)
-    assert result.mode == "RGBA"
-    assert result.size == (layout.canvas_w, layout.canvas_h)
-
-
-def test_build_chrome_content_area_transparent():
-    pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
-    layout = build_layout(100, 50, config)
-    result = _build_chrome(layout, config)
-    cx = layout.content_x + layout.content_w // 2
-    cy = layout.content_y + layout.content_h // 2
-    assert result.getpixel((cx, cy))[3] == 0
+    chrome_yes, _ = _build_chrome(layout, config_yes)
+    chrome_no, _ = _build_chrome(layout, config_no)
+    assert chrome_yes.tobytes() != chrome_no.tobytes()
 
 
 # ------------------------------------------------------------------ Watermarks
@@ -772,3 +714,33 @@ def test_gif_alias_still_works(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, ["gif", "--help"])
     assert result.exit_code == 0
+
+
+def test_apply_export_content_visible_in_content_area(tmp_path):
+    """Content pixels must appear at the content position in the output."""
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import apply_export, build_layout
+
+    # Create a GIF with a solid bright-red frame
+    gif = tmp_path / "red.gif"
+    f = Image.new("RGB", (80, 40), (255, 0, 0))
+    f.quantize(colors=256).save(gif, save_all=True, duration=100, loop=0)
+
+    config = FrameConfig(
+        background=None, shadow=False, border_width=0,
+        frame_bar=False, padding_left=0, padding_right=0,
+        padding_top=0, padding_bottom=0,
+        scriptcast_watermark=False,
+    )
+    apply_export(gif, config, format="apng")
+    png = tmp_path / "red.png"
+    result = Image.open(png).convert("RGBA")
+
+    layout = build_layout(80, 40, config)
+    cx = layout.content_x + layout.content_w // 2
+    cy = layout.content_y + layout.content_h // 2
+    r, g, b, a = result.getpixel((cx, cy))
+    # Content (red) must be visible at the content centre
+    assert r > 200 and g < 50 and b < 50
