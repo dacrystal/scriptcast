@@ -26,7 +26,6 @@ _TRAFFIC_LIGHTS = [
 ]
 _LIGHT_RADIUS = 6
 _TITLE_COLOR = "#8A8A8A"
-_WINDOW_BG = "#1E1E1E"
 
 
 class AggNotFoundError(Exception):
@@ -75,14 +74,14 @@ def build_layout(content_w: int, content_h: int, config: FrameConfig) -> Layout:
     half_bw = config.border_width / 2
     title_bar_h = TITLE_BAR_HEIGHT if config.frame_bar else 0
 
-    window_w = config.padding_left + content_w + config.padding_right
-    window_h = title_bar_h + config.padding_top + content_h + config.padding_bottom
+    window_w = content_w
+    window_h = title_bar_h + content_h
 
     window_x = ml + half_bw
     window_y = mt + half_bw
 
-    content_x = int(window_x + config.padding_left)
-    content_y = int(window_y + title_bar_h + config.padding_top)
+    content_x = int(window_x)
+    content_y = int(window_y + title_bar_h)
 
     canvas_w = int(ml + half_bw + window_w + half_bw + mr)
     canvas_h = int(mt + half_bw + window_h + half_bw + mb)
@@ -162,6 +161,41 @@ def _build_bg_shadow(layout: Layout, config: FrameConfig) -> PILImage:
     return Image.alpha_composite(base, shadow_canvas)
 
 
+def _preprocess_frames(
+    frames: list,
+    config: FrameConfig,
+) -> tuple:
+    """Detect terminal bg colour and bake padding into every content frame.
+
+    Returns (padded_frames, terminal_bg) where terminal_bg is an RGB triple.
+    Alpha-composites frame onto a terminal_bg canvas so transparent corner pixels
+    show bg, not garbage palette RGB values.
+    """
+    from PIL import Image
+
+    first = frames[0].convert("RGBA")
+    w, h = first.size
+    terminal_bg: tuple[int, int, int] = first.getpixel((w // 2, 1))[:3]
+
+    pl = config.padding_left
+    pr = config.padding_right
+    pt = config.padding_top
+    pb = config.padding_bottom
+    new_w = pl + w + pr
+    new_h = pt + h + pb
+
+    padded: list = []
+    for frame in frames:
+        canvas = Image.new("RGBA", (new_w, new_h), (*terminal_bg, 255))
+        rgba = frame.convert("RGBA")
+        frame_layer = Image.new("RGBA", (new_w, new_h), (0, 0, 0, 0))
+        frame_layer.paste(rgba, (pl, pt))
+        canvas = Image.alpha_composite(canvas, frame_layer)
+        padded.append(canvas)
+
+    return padded, terminal_bg
+
+
 def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
     from PIL import Image
     import math
@@ -198,7 +232,11 @@ def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
     img.paste(circle, (cx - radius, cy - radius), circle)
 
 
-def _build_chrome(layout: Layout, config: FrameConfig) -> tuple[PILImage, PILImage]:
+def _build_chrome(
+    layout: Layout,
+    config: FrameConfig,
+    window_bg: tuple[int, int, int] = (30, 30, 30),
+) -> tuple[PILImage, PILImage]:
     """Build the window chrome and a content-area mask.
 
     Returns:
@@ -217,7 +255,7 @@ def _build_chrome(layout: Layout, config: FrameConfig) -> tuple[PILImage, PILIma
     r = config.radius
 
     # Window background (rounded rect, no hole)
-    draw.rounded_rectangle([wx, wy, wx + ww, wy + wh], radius=r, fill=_hex_rgba(_WINDOW_BG))
+    draw.rounded_rectangle([wx, wy, wx + ww, wy + wh], radius=r, fill=(*window_bg, 255))
 
     # Title bar
     if config.frame_bar and layout.title_bar_h > 0:
@@ -374,10 +412,10 @@ def apply_scriptcast_watermark(gif_path: Path, config: FrameConfig) -> None:
     )
 
 
-def _chrome_colors(config: FrameConfig) -> list[tuple[int, int, int]]:
+def _chrome_colors(config: FrameConfig, window_bg: tuple[int, int, int] = (30, 30, 30)) -> list[tuple[int, int, int]]:
     """RGB colors that must be reserved in the GIF palette."""
     colors = [_hex_rgba(base)[:3] for _, base, _ in _TRAFFIC_LIGHTS]
-    colors.append(_hex_rgba(_WINDOW_BG)[:3])
+    colors.append(window_bg)
     colors.append(_hex_rgba(config.frame_bar_color)[:3])
     # Deduplicate while preserving order
     seen: set[tuple[int, int, int]] = set()
@@ -393,11 +431,12 @@ def _build_global_palette(
     template_rgb: PILImage,
     rgb_canvases: list[PILImage],
     config: FrameConfig,
+    window_bg: tuple[int, int, int] = (30, 30, 30),
     max_samples: int = 20,
 ) -> PILImage:
     from PIL import Image
 
-    chrome_colors = _chrome_colors(config)
+    chrome_colors = _chrome_colors(config, window_bg)
     n_chrome = len(chrome_colors)
 
     n = len(rgb_canvases)
@@ -451,19 +490,22 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
     if not raw_frames:
         return
 
-    content_w, content_h = raw_frames[0].size
+    # Pre-process: detect terminal bg, bake padding into frames, fix transparent corners
+    frames, terminal_bg = _preprocess_frames(raw_frames, config)
+
+    content_w, content_h = frames[0].size
     layout = build_layout(content_w, content_h, config)
     bg_shadow = _build_bg_shadow(layout, config)
-    chrome, content_mask = _build_chrome(layout, config)
+    chrome, content_mask = _build_chrome(layout, config, window_bg=terminal_bg)
 
     output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
 
     rgba_frames = []
-    for raw in raw_frames:
+    for frame in frames:
         canvas = bg_shadow.copy()
         canvas = Image.alpha_composite(canvas, chrome)
         content_canvas = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-        content_canvas.paste(raw, (layout.content_x, layout.content_y))
+        content_canvas.paste(frame, (layout.content_x, layout.content_y))
         canvas = Image.composite(content_canvas, canvas, content_mask)
         canvas = _apply_watermark(canvas, config)
         canvas = _apply_scriptcast_watermark(canvas, config)
@@ -481,7 +523,7 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
     else:
         template_rgb = Image.alpha_composite(bg_shadow, chrome).convert("RGB")
         rgb_canvases = [c.convert("RGB") for c in rgba_frames]
-        palette_ref = _build_global_palette(template_rgb, rgb_canvases, config)
+        palette_ref = _build_global_palette(template_rgb, rgb_canvases, config, window_bg=terminal_bg)
         out_frames = [
             f.quantize(palette=palette_ref, dither=Dither.NONE)
             for f in rgb_canvases

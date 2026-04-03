@@ -41,18 +41,18 @@ def test_layout_basic_no_margin_no_border():
         padding_left=14, padding_right=14, padding_top=14, padding_bottom=14,
         border_width=0,
         margin_top=None, margin_right=None, margin_bottom=None, margin_left=None,
-        background=None,  # auto margin = 0
+        background=None,
         frame_bar=True,
     )
     layout = build_layout(200, 100, config)
     assert layout.content_w == 200
     assert layout.content_h == 100
-    assert layout.window_w == 200 + 14 + 14   # 228
-    assert layout.window_h == 28 + 14 + 100 + 14  # 156
-    assert layout.canvas_w == 228
-    assert layout.canvas_h == 156
-    assert layout.content_x == 14
-    assert layout.content_y == 28 + 14   # 42
+    assert layout.window_w == 200          # no padding expansion
+    assert layout.window_h == 28 + 100    # title bar + content only
+    assert layout.canvas_w == 200
+    assert layout.canvas_h == 128
+    assert layout.content_x == 0          # no padding offset
+    assert layout.content_y == 28         # title bar only
     assert layout.title_bar_h == 28
 
 
@@ -69,8 +69,8 @@ def test_layout_with_margin():
     layout = build_layout(200, 100, config)
     assert layout.window_x == 82
     assert layout.window_y == 82
-    assert layout.canvas_w == 82 + 228 + 82   # 392
-    assert layout.canvas_h == 82 + 156 + 82   # 320
+    assert layout.canvas_w == 82 + 200 + 82   # 364
+    assert layout.canvas_h == 82 + 128 + 82   # 292
 
 
 def test_layout_border_shifts_window_and_canvas():
@@ -87,12 +87,12 @@ def test_layout_border_shifts_window_and_canvas():
     assert layout.half_bw == 5.0
     assert layout.window_x == 5.0
     assert layout.window_y == 5.0
-    # canvas = 0 + 5 + 228 + 5 + 0 = 238
-    assert layout.canvas_w == 238
-    assert layout.canvas_h == 166
-    # content_x = window_x + padding_left = 5 + 14 = 19
-    assert layout.content_x == 19
-    assert layout.content_y == int(5 + 28 + 14)  # 47
+    # canvas = 0 + 5 + 200 + 5 + 0 = 210
+    assert layout.canvas_w == 210
+    assert layout.canvas_h == 138   # 5 + 128 + 5
+    # content_x = window_x = 5
+    assert layout.content_x == 5
+    assert layout.content_y == int(5 + 28)   # 33
 
 
 def test_layout_frame_bar_false_removes_title_bar_height():
@@ -107,8 +107,8 @@ def test_layout_frame_bar_false_removes_title_bar_height():
     )
     layout = build_layout(200, 100, config)
     assert layout.title_bar_h == 0
-    assert layout.window_h == 0 + 14 + 100 + 14   # 128
-    assert layout.content_y == 14   # no title bar contribution
+    assert layout.window_h == 100    # content only, no title bar, no padding
+    assert layout.content_y == 0    # no title bar contribution
 
 
 def test_layout_border_zero_is_simple():
@@ -280,6 +280,63 @@ def test_bg_shadow_disabled_no_change():
     assert r1.tobytes() == r2.tobytes()
 
 
+# ------------------------------------------------------------------ _preprocess_frames
+def test_preprocess_frames_padded_size():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _preprocess_frames
+    frame = Image.new("RGBA", (100, 50), (40, 42, 54, 255))
+    config = FrameConfig(padding_left=10, padding_right=10, padding_top=5, padding_bottom=5)
+    padded, bg = _preprocess_frames([frame], config)
+    assert padded[0].size == (120, 60)   # 10+100+10 wide, 5+50+5 tall
+
+
+def test_preprocess_frames_detects_bg_from_top_center():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _preprocess_frames
+    frame = Image.new("RGBA", (100, 50), (0, 0, 0, 255))
+    frame.putpixel((50, 1), (40, 42, 54, 255))   # distinctive colour at sample point
+    config = FrameConfig(padding_left=0, padding_right=0, padding_top=0, padding_bottom=0)
+    _, bg = _preprocess_frames([frame], config)
+    assert bg == (40, 42, 54)
+
+
+def test_preprocess_frames_transparent_corners_show_bg():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _preprocess_frames
+    w, h = 50, 30
+    frame = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+    frame.putpixel((0, 0), (0, 0, 0, 0))          # transparent top-left (like agg)
+    bg_color = (40, 42, 54)
+    frame.putpixel((w // 2, 1), (*bg_color, 255))  # set the bg-sample pixel
+    config = FrameConfig(padding_left=5, padding_right=5, padding_top=5, padding_bottom=5)
+    padded_frames, _ = _preprocess_frames([frame], config)
+    padded = padded_frames[0]
+    # (pad_left + 0, pad_top + 0) = (5, 5) — transparent corner must not overwrite bg
+    assert padded.getpixel((5, 5))[:3] == bg_color
+
+
+def test_preprocess_frames_padding_filled_with_bg():
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from scriptcast.config import FrameConfig
+    from scriptcast.export import _preprocess_frames
+    w, h = 50, 30
+    frame = Image.new("RGBA", (w, h), (255, 255, 255, 255))
+    bg_color = (40, 42, 54)
+    frame.putpixel((w // 2, 1), (*bg_color, 255))
+    config = FrameConfig(padding_left=10, padding_right=10, padding_top=10, padding_bottom=10)
+    padded_frames, _ = _preprocess_frames([frame], config)
+    padded = padded_frames[0]
+    assert padded.getpixel((0, 0))[:3] == bg_color   # outer corner is padding bg
+    assert padded.getpixel((5, 5))[:3] == bg_color   # still in padding region
+
+
 # ------------------------------------------------------------------ _build_chrome
 def test_chrome_returns_tuple():
     pytest.importorskip("PIL")
@@ -316,16 +373,14 @@ def test_chrome_mask_is_L_mode_correct_size():
 def test_chrome_content_area_has_window_bg_color():
     pytest.importorskip("PIL")
     from scriptcast.config import FrameConfig
-    from scriptcast.export import _build_chrome, build_layout, _hex_rgba, _WINDOW_BG
+    from scriptcast.export import _build_chrome, build_layout
     config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=True)
     layout = build_layout(100, 50, config)
-    chrome, mask = _build_chrome(layout, config)
-    # Chrome has NO hole — content area shows the window background colour
+    window_bg = (20, 20, 40)   # arbitrary test colour
+    chrome, mask = _build_chrome(layout, config, window_bg=window_bg)
     cx = layout.content_x + layout.content_w // 2
     cy = layout.content_y + layout.content_h // 2
-    expected_rgb = _hex_rgba(_WINDOW_BG)[:3]
-    pixel = chrome.getpixel((cx, cy))[:3]
-    assert pixel == expected_rgb
+    assert chrome.getpixel((cx, cy))[:3] == window_bg
 
 
 def test_chrome_outside_window_is_transparent():
