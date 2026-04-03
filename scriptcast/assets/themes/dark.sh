@@ -1,6 +1,13 @@
 # scriptcast built-in theme: dark
 : SC set terminal-theme dark
-: SC set theme-frame macos
+: SC set theme-frame true
+: SC set theme-frame-bar true
+: SC set theme-frame-bar-title Terminal
+: SC set theme-frame-bar-color #ffffff30
+: SC set theme-frame-bar-buttons true
+: SC set theme-watermark Demo
+: SC set theme-watermark-color #ffffff
+: SC set theme-scriptcast-watermark true
 : SC set theme-background #1a1a2e,#16213e
 : SC set theme-margin 82 82 120
 : SC set theme-padding 14
@@ -11,3 +18,4 @@
 : SC set theme-shadow-color #0000004d
 : SC set theme-shadow-radius 20
 : SC set theme-shadow-offset-y 21
+: SC set theme-shadow-offset-x 0

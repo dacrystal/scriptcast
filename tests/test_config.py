@@ -107,7 +107,7 @@ def test_frame_config_defaults():
     assert c.watermark_color == "#ffffff"
     assert c.watermark_size is None
     assert c.scriptcast_watermark is True
-    assert c.frame == "none"
+    assert c.frame is False
 
 
 def test_frame_config_custom():
@@ -133,14 +133,13 @@ def test_frame_config_custom_margin():
     assert c.margin_left is None
 
 
-def test_frame_config_frame_default_is_none():
+def test_frame_config_frame_default_false():
     from scriptcast.config import FrameConfig
-    assert FrameConfig().frame == "none"
+    assert FrameConfig().frame is False
 
-
-def test_frame_config_frame_macos():
+def test_frame_config_frame_true():
     from scriptcast.config import FrameConfig
-    assert FrameConfig(frame="macos").frame == "macos"
+    assert FrameConfig(frame=True).frame is True
 
 
 def test_frame_config_scriptcast_watermark_default():

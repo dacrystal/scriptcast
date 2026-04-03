@@ -92,7 +92,7 @@ class FrameConfig:
     watermark_size: int | None = None
 
     # Frame style
-    frame: str = "none"               # "none" | "macos"
+    frame: bool = False
 
     # Scriptcast brand watermark (opt-out)
     scriptcast_watermark: bool = True

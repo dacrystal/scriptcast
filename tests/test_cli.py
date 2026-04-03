@@ -168,7 +168,7 @@ def test_gif_uses_frame_from_theme(tmp_path):
     sc = tmp_path / "demo.sc"
     sc.write_text(
         json.dumps({"directive-prefix": "SC", "width": 100, "height": 28}) + "\n"
-        + json.dumps([0.0, "directive", "set theme-frame macos"]) + "\n"
+        + json.dumps([0.0, "directive", "set theme-frame true"]) + "\n"
     )
     runner = CliRunner()
     with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
@@ -186,3 +186,23 @@ def test_gif_theme_flag_accepted(tmp_path):
     with patch("scriptcast.__main__.generate_from_sc", return_value=[]):
         result = runner.invoke(cli, ["gif", str(sc), "--theme", "dark"])
     assert result.exit_code == 0, result.output
+
+
+def test_export_removed_flags_rejected(tmp_path):
+    """Flags removed from export: theme-configurable props should not exist."""
+    import json
+    from click.testing import CliRunner
+    from scriptcast.__main__ import cli
+
+    sc = tmp_path / "demo.sc"
+    sc.write_text(
+        json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"}) + "\n"
+    )
+    runner = CliRunner()
+    for flag in ["--frame-bar-title", "--frame-bar-color", "--watermark"]:
+        result = runner.invoke(cli, ["export", str(sc), flag, "x"])
+        assert result.exit_code != 0, f"{flag} should be rejected"
+    result = runner.invoke(cli, ["export", str(sc), "--no-frame-bar"])
+    assert result.exit_code != 0, "--no-frame-bar should be rejected"
+    result = runner.invoke(cli, ["export", str(sc), "--no-frame-bar-buttons"])
+    assert result.exit_code != 0, "--no-frame-bar-buttons should be rejected"

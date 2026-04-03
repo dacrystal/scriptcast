@@ -692,35 +692,6 @@ def test_export_command_exists():
     assert "export" in result.output.lower() or "agg" in result.output.lower()
 
 
-def test_export_command_frame_bar_title_forwarded(tmp_path):
-    import json
-    from unittest.mock import patch
-    from click.testing import CliRunner
-    from scriptcast.__main__ import cli
-
-    sc_file = tmp_path / "demo.sc"
-    sc_file.write_text(
-        json.dumps({"version": 1, "width": 80, "height": 24,
-                    "directive-prefix": "SC"}) + "\n"
-        + json.dumps([0.0, "directive", "set theme-frame macos"]) + "\n"
-    )
-    fake_cast = tmp_path / "demo.cast"
-    fake_gif = tmp_path / "demo.gif"
-
-    runner = CliRunner()
-    with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
-        with patch("scriptcast.__main__.generate_export", return_value=fake_gif) as mock_exp:
-            result = runner.invoke(
-                cli,
-                ["export", str(sc_file), "--output-dir", str(tmp_path),
-                 "--frame-bar-title", "MyDemo"],
-            )
-    assert result.exit_code == 0, result.output
-    frame_config = mock_exp.call_args[0][1]
-    assert frame_config is not None
-    assert frame_config.frame_bar_title == "MyDemo"
-
-
 def test_export_command_no_frame_passes_none(tmp_path):
     from unittest.mock import patch
     from click.testing import CliRunner

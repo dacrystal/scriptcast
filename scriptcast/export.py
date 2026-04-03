@@ -18,6 +18,7 @@ except ImportError:
 
 TITLE_BAR_HEIGHT = 28
 _PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
+_DM_SANS = Path(__file__).parent / "assets" / "fonts" / "DMSans-Regular.ttf"
 _WATERMARK_TEXT = "ScriptCast"
 _TRAFFIC_LIGHTS = [
     (12, "#FF5F57", "#FF8C80"),  # red
@@ -74,13 +75,13 @@ def build_layout(content_w: int, content_h: int, config: FrameConfig) -> Layout:
     half_bw = config.border_width / 2
     title_bar_h = TITLE_BAR_HEIGHT if config.frame_bar else 0
 
-    window_w = content_w
-    window_h = title_bar_h + content_h
+    window_w = content_w + config.border_width * 2
+    window_h = title_bar_h + content_h + config.border_width
 
     window_x = ml + half_bw
     window_y = mt + half_bw
 
-    content_x = int(window_x)
+    content_x = int(window_x) + config.border_width
     content_y = int(window_y + title_bar_h)
 
     canvas_w = int(ml + half_bw + window_w + half_bw + mr)
@@ -185,12 +186,21 @@ def _preprocess_frames(
     new_h = pt + h + pb
 
     padded: list = []
+    bg_solid = (*terminal_bg, 255)
     for frame in frames:
-        canvas = Image.new("RGBA", (new_w, new_h), (*terminal_bg, 255))
-        rgba = frame.convert("RGBA")
-        frame_layer = Image.new("RGBA", (new_w, new_h), (0, 0, 0, 0))
-        frame_layer.paste(rgba, (pl, pt))
-        canvas = Image.alpha_composite(canvas, frame_layer)
+        fw, fh = frame.size
+        px = frame.load()
+        # Patch 4x4 corners: transparent/mixed pixels carry black backing from the
+        # GIF palette; replace them with solid terminal_bg before compositing.
+        c = 4
+        for x0, y0 in [(0, 0), (fw - c, 0), (0, fh - c), (fw - c, fh - c)]:
+            for y in range(y0, y0 + c):
+                for x in range(x0, x0 + c):
+                    if px[x, y] != bg_solid:
+                        px[x, y] = bg_solid
+
+        canvas = Image.new("RGBA", (new_w, new_h), bg_solid)
+        canvas.paste(frame, (pl, pt))
         padded.append(canvas)
 
     return padded, terminal_bg
@@ -324,9 +334,12 @@ def _apply_watermark(base: PILImage, config: FrameConfig) -> PILImage:
     )
 
     try:
-        font = ImageFont.load_default(size=font_size)
-    except TypeError:
-        font = ImageFont.load_default()
+        font = ImageFont.truetype(str(_DM_SANS), size=font_size)
+    except Exception:
+        try:
+            font = ImageFont.load_default(size=font_size)
+        except TypeError:
+            font = ImageFont.load_default()
 
     x = base.width // 2
     y = base.height - 22 - font_size // 2

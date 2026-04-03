@@ -153,22 +153,19 @@ def test_apply_theme_padding_individual_side():
     assert fc.padding_right == 14  # unchanged default
 
 
-def test_apply_theme_frame_macos():
+def test_apply_theme_frame_true():
     from scriptcast.config import FrameConfig, ScriptcastConfig
     from scriptcast.theme import apply_theme_to_configs
     fc = FrameConfig()
-    apply_theme_to_configs({"theme-frame": "macos"}, fc, ScriptcastConfig())
-    assert fc.frame == "macos"
+    apply_theme_to_configs({"theme-frame": "true"}, fc, ScriptcastConfig())
+    assert fc.frame is True
 
-
-def test_apply_theme_frame_none():
+def test_apply_theme_frame_false():
     from scriptcast.config import FrameConfig, ScriptcastConfig
     from scriptcast.theme import apply_theme_to_configs
-    fc = FrameConfig(frame="macos")
-    apply_theme_to_configs({"theme-frame": "none"}, fc, ScriptcastConfig())
-    # `frame` is typed as `str` (non-nullable), so the string "none" is preserved as-is
-    # rather than being converted to Python None.
-    assert fc.frame == "none"
+    fc = FrameConfig(frame=True)
+    apply_theme_to_configs({"theme-frame": "false"}, fc, ScriptcastConfig())
+    assert fc.frame is False
 
 
 def test_apply_terminal_theme():
@@ -269,3 +266,11 @@ def test_dark_theme_margin_bottom_is_120():
     fc = FrameConfig()
     apply_theme_to_configs(load_theme("dark"), fc, ScriptcastConfig())
     assert fc.margin_bottom == 120
+
+
+def test_dark_theme_sets_frame_true():
+    from scriptcast.config import FrameConfig, ScriptcastConfig
+    from scriptcast.theme import apply_theme_to_configs, load_theme
+    fc = FrameConfig()
+    apply_theme_to_configs(load_theme("dark"), fc, ScriptcastConfig())
+    assert fc.frame is True

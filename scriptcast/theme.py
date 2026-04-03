@@ -22,7 +22,7 @@ _INT_THEME_PROPS = {
     "margin-top", "margin-right", "margin-bottom", "margin-left",
     "padding-top", "padding-right", "padding-bottom", "padding-left",
 }
-_BOOL_THEME_PROPS = {"shadow", "frame-bar", "frame-bar-buttons"}
+_BOOL_THEME_PROPS = {"shadow", "frame-bar", "frame-bar-buttons", "frame"}
 
 
 def _parse_css_shorthand(value: str) -> tuple[int, int, int, int]:
