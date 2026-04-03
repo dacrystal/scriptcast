@@ -347,3 +347,34 @@ def test_record_cwd_is_script_directory(tmp_path):
     record(script, sc_path, config, shell)
     content = sc_path.read_text()
     assert "hello from helper" in content
+
+
+# --- escape sequence decoding in SC directive trace lines ---
+
+def test_postprocess_decodes_hex_escape_in_sc_directive():
+    # bash re-quotes "\x1b[92m❯ \x1b[0m" to '\x1b[92m❯ \x1b[0m' in xtrace
+    raw = "1.000 + : SC set prompt '\\x1b[92m> \\x1b[0m'\n"
+    events = _parse_sc_events(_postprocess(raw))
+    directive = next(e for e in events if e[1] == "directive")
+    assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
+    assert "\\x1b" not in directive[2]
+
+
+def test_postprocess_decodes_octal_escape_in_sc_directive():
+    # bash re-quotes "\033[92m❯ \033[0m" to '\033[92m❯ \033[0m' in xtrace
+    raw = "1.000 + : SC set prompt '\\033[92m> \\033[0m'\n"
+    events = _parse_sc_events(_postprocess(raw))
+    directive = next(e for e in events if e[1] == "directive")
+    assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
+    assert "\\033" not in directive[2]
+
+
+
+def test_postprocess_does_not_decode_escapes_in_cmd_events():
+    # regular echo -e commands must keep literal \x1b text — decoding would
+    # inject real ESC bytes into typed command text in the cast
+    raw = "1.000 + echo -e '\\x1b[92m> \\x1b[0m'\n"
+    events = _parse_sc_events(_postprocess(raw))
+    cmd = next(e for e in events if e[1] == "cmd")
+    assert "\\x1b" in cmd[2], "literal \\x1b should be preserved in cmd events"
+    assert "\x1b" not in cmd[2], "real ESC bytes must not appear in cmd events"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -13,6 +14,23 @@ from pathlib import Path
 from .config import ScriptcastConfig
 from .registry import build_directives
 from .shell import get_adapter
+
+_HEX_ESC_RE = re.compile(r"\\x([0-9a-fA-F]{2})")
+_OCT_ESC_RE = re.compile(r"\\([0-7]{1,3})")
+
+
+def _decode_bash_escapes(text: str) -> str:
+    """Decode literal \\xNN hex and \\NNN octal escapes in an xtrace SC directive line.
+
+    Bash xtrace passes raw bytes through (single-quoted), so actual ESC bytes
+    need no decoding. This handles the case where the user writes double-quoted
+    strings like "\\x1b[92m..." or "\\033[92m..." — bash keeps \\x1b/\\033 as
+    literal text, which must be decoded to real Unicode code points so they are
+    stored as \\u001b in the .sc JSONL.
+    """
+    text = _HEX_ESC_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
+    text = _OCT_ESC_RE.sub(lambda m: chr(int(m.group(1), 8)), text)
+    return text
 
 
 def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
@@ -47,7 +65,11 @@ def _postprocess(
             ts_val = float(ts_str)
         except ValueError:
             continue
-        queue.append((ts_val, content.rstrip("\n\r")))
+        content = content.rstrip("\n\r")
+        sc_directive_prefix = f"{tp} : {directive_prefix} "
+        if content.startswith(sc_directive_prefix):
+            content = _decode_bash_escapes(content)
+        queue.append((ts_val, content))
 
     directives = build_directives(directive_prefix, trace_prefix)
     out: list[str] = []

@@ -5,14 +5,14 @@
 # ----------------------------------------
 : SC set type_speed 40
 : SC set word_speed 100
-: SC set cmd_wait 80
-: SC set exit_wait 120
+: SC set cmd_wait 500
+: SC set exit_wait 1000
 : SC set width 80
 : SC set height 24
-: SC set prompt "$ "
+: SC set prompt "\x1b[92m> \x1b[0m"
 : SC set terminal-theme dark
-: SC set input_wait 80
-: SC set enter_wait 80
+: SC set input_wait 300
+: SC set enter_wait 100
 
 # ----------------------------------------
 # Scene — Intro
@@ -24,7 +24,7 @@ GREETING="Hello from scriptcast"
 : SC record resume
 
 echo "$GREETING"
-echo "Generating terminal demos from shell scripts."
+echo -e "\x1b[92mGenerating terminal demos from shell scripts.\x1b[0m"
 
 # ----------------------------------------
 # Scene — Mock
@@ -80,5 +80,5 @@ echo "After pause"
 # ----------------------------------------
 : SC scene comment
 
-: SC '\' This is a comment
+: SC \\ This is a comment
 echo "Comments appear as cmd events in the cast"
