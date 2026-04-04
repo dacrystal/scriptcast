@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .config import FrameConfig
+    from .config import ThemeConfig
 
 try:
     from PIL.Image import Image as PILImage
@@ -63,7 +63,7 @@ class Layout:
     title_cy: float
 
 
-def _resolve_margin_sides(config: FrameConfig) -> tuple[int, int, int, int]:
+def _resolve_margin_sides(config: ThemeConfig) -> tuple[int, int, int, int]:
     auto = 82 if config.background is not None else 0
     t = config.margin_top if config.margin_top is not None else auto
     r = config.margin_right if config.margin_right is not None else auto
@@ -72,7 +72,7 @@ def _resolve_margin_sides(config: FrameConfig) -> tuple[int, int, int, int]:
     return (t, r, b, l)
 
 
-def build_layout(content_w: int, content_h: int, config: FrameConfig) -> Layout:
+def build_layout(content_w: int, content_h: int, config: ThemeConfig) -> Layout:
     mt, mr, mb, ml = _resolve_margin_sides(config)
     half_bw = config.border_width / 2
     title_bar_h = TITLE_BAR_HEIGHT if config.frame_bar else 0
@@ -108,7 +108,7 @@ def build_layout(content_w: int, content_h: int, config: FrameConfig) -> Layout:
     )
 
 
-def _build_bg_shadow(layout: Layout, config: FrameConfig) -> PILImage:
+def _build_bg_shadow(layout: Layout, config: ThemeConfig) -> PILImage:
     from PIL import Image, ImageDraw, ImageFilter
 
     # Background
@@ -166,7 +166,7 @@ def _build_bg_shadow(layout: Layout, config: FrameConfig) -> PILImage:
 
 def _preprocess_frames(
     frames: list,
-    config: FrameConfig,
+    config: ThemeConfig,
 ) -> tuple:
     """Detect terminal bg colour and bake padding into every content frame.
 
@@ -246,7 +246,7 @@ def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
 
 def _build_chrome(
     layout: Layout,
-    config: FrameConfig,
+    config: ThemeConfig,
     window_bg: tuple[int, int, int] = (30, 30, 30),
 ) -> tuple[PILImage, PILImage]:
     """Build the window chrome and a content-area mask.
@@ -320,7 +320,7 @@ def _build_chrome(
     return chrome, mask
 
 
-def _apply_watermark(base: PILImage, config: FrameConfig, margin_bottom: int = 0) -> PILImage:
+def _apply_watermark(base: PILImage, config: ThemeConfig, margin_bottom: int = 0) -> PILImage:
     if config.watermark is None:
         return base
 
@@ -359,7 +359,7 @@ def _apply_watermark(base: PILImage, config: FrameConfig, margin_bottom: int = 0
     return result
 
 
-def _apply_scriptcast_watermark(base: PILImage, config: FrameConfig) -> PILImage:
+def _apply_scriptcast_watermark(base: PILImage, config: ThemeConfig) -> PILImage:
     if not config.scriptcast_watermark:
         return base
 
@@ -384,7 +384,7 @@ def _apply_scriptcast_watermark(base: PILImage, config: FrameConfig) -> PILImage
     return result
 
 
-def apply_scriptcast_watermark(gif_path: Path, config: FrameConfig) -> None:
+def apply_scriptcast_watermark(gif_path: Path, config: ThemeConfig) -> None:
     """Overlay the ScriptCast brand watermark on an existing GIF in-place (no frame path).
 
     Used when --frame is not set but scriptcast_watermark is True.
@@ -431,7 +431,7 @@ def apply_scriptcast_watermark(gif_path: Path, config: FrameConfig) -> None:
     )
 
 
-def _chrome_colors(config: FrameConfig, window_bg: tuple[int, int, int] = (30, 30, 30)) -> list[tuple[int, int, int]]:
+def _chrome_colors(config: ThemeConfig, window_bg: tuple[int, int, int] = (30, 30, 30)) -> list[tuple[int, int, int]]:
     """RGB colors that must be reserved in the GIF palette."""
     colors = [_hex_rgba(base)[:3] for _, base, _ in _TRAFFIC_LIGHTS]
     colors.append(window_bg)
@@ -449,7 +449,7 @@ def _chrome_colors(config: FrameConfig, window_bg: tuple[int, int, int] = (30, 3
 def _build_global_palette(
     template_rgb: PILImage,
     rgb_canvases: list[PILImage],
-    config: FrameConfig,
+    config: ThemeConfig,
     window_bg: tuple[int, int, int] = (30, 30, 30),
     max_samples: int = 20,
 ) -> PILImage:
@@ -480,7 +480,7 @@ def _build_global_palette(
     return palette_img
 
 
-def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> None:
+def apply_export(gif_path: Path, config: ThemeConfig, format: str = "gif") -> None:
     """Post-process a GIF in-place: apply background, shadow, chrome, and watermarks.
 
     format: "gif" writes .gif (quantized 256 colours); "png" writes .png (full RGBA).
@@ -560,7 +560,7 @@ def apply_export(gif_path: Path, config: FrameConfig, format: str = "gif") -> No
 
 def generate_export(
     cast_path: str | Path,
-    frame_config: FrameConfig | None = None,
+    frame_config: ThemeConfig | None = None,
     format: str = "gif",
 ) -> Path:
     """Convert a .cast file to GIF or PNG using agg, then apply frame if configured.

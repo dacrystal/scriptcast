@@ -139,13 +139,6 @@ def test_single_cast_timestamps_continuous(tmp_path):
     assert max(times) > 0.2
 
 
-def test_show_title_emits_scene_name(tmp_path):
-    sc = _zero_sc(("directive", "scene MyScene"), ("cmd", "echo x"))
-    paths = generate_from_sc_text(sc, tmp_path, show_title=True)
-    _, cast = _cast(paths[0])
-    assert "MyScene" in "".join(e[2] for e in cast)
-
-
 def test_generate_from_sc_reads_file(tmp_path):
     sc = _zero_sc(("cmd", "echo hello"))
     sc_file = tmp_path / "demo.sc"
@@ -215,3 +208,141 @@ def test_quoted_prompt_in_pre_scene_set(tmp_path):
     _, cast = _cast(paths[0])
     prompt_events = [e for e in cast if e[2] == "$ "]
     assert prompt_events, f"expected '$ ' prompt in cast, got: {cast}"
+
+
+def test_build_config_from_sc_text_reads_header():
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    header = json.dumps({"version": 1, "shell": "bash", "width": 80, "height": 24,
+                         "directive-prefix": "SC"})
+    sc = header + "\n"
+    cfg = build_config_from_sc_text(sc)
+    assert cfg.width == 80
+    assert cfg.height == 24
+    assert cfg.directive_prefix == "SC"
+
+
+def test_build_config_from_sc_text_applies_pre_scene_set():
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
+    events = [
+        json.dumps([0.0, "directive", "set type_speed 20"]),
+        json.dumps([0.1, "directive", "set theme-radius 16"]),
+        json.dumps([0.2, "directive", "scene main"]),
+        json.dumps([0.3, "cmd", "echo hello"]),
+    ]
+    sc = header + "\n" + "\n".join(events)
+    cfg = build_config_from_sc_text(sc)
+    assert cfg.type_speed == 20
+    assert cfg.theme.radius == 16
+
+
+def test_build_config_from_sc_text_stops_at_scene():
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
+    events = [
+        json.dumps([0.0, "directive", "scene main"]),
+        json.dumps([0.1, "directive", "set type_speed 99"]),
+    ]
+    sc = header + "\n" + "\n".join(events)
+    cfg = build_config_from_sc_text(sc)
+    assert cfg.type_speed == 40  # default, not overridden after scene
+
+
+def test_build_config_from_sc_text_empty_returns_defaults():
+    from scriptcast.generator import build_config_from_sc_text
+    cfg = build_config_from_sc_text("")
+    assert cfg.type_speed == 40
+    assert cfg.theme.frame is True
+
+
+# --- build_config_from_sc_text: base parameter ---
+
+def test_build_config_from_sc_text_base_provides_defaults():
+    from scriptcast.config import ScriptcastConfig
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    base = ScriptcastConfig(prompt="THEME_PROMPT")
+    base.theme.radius = 99
+    header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
+    sc = header + "\n"
+    cfg = build_config_from_sc_text(sc, base=base)
+    assert cfg.prompt == "THEME_PROMPT"
+    assert cfg.theme.radius == 99
+
+
+def test_build_config_from_sc_text_sc_overrides_base():
+    from scriptcast.config import ScriptcastConfig
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    base = ScriptcastConfig(prompt="THEME_PROMPT")
+    header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
+    events = [json.dumps([0.0, "directive", "set prompt SC_PROMPT"])]
+    sc = header + "\n" + "\n".join(events)
+    cfg = build_config_from_sc_text(sc, base=base)
+    assert cfg.prompt == "SC_PROMPT"
+
+
+def test_build_config_from_sc_text_base_none_is_default():
+    from scriptcast.generator import build_config_from_sc_text
+    import json
+    header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
+    sc = header + "\n"
+    cfg = build_config_from_sc_text(sc, base=None)
+    assert cfg.prompt == "$ "
+
+
+# --- generate_from_sc_text: base parameter ---
+
+def test_generate_from_sc_text_base_prompt_in_cast(tmp_path):
+    from scriptcast.config import ScriptcastConfig
+    base = ScriptcastConfig(prompt="THEME>")
+    sc = _zero_sc(
+        ("directive", "scene main"),
+        ("cmd", "echo hi"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path, base=base)
+    _, cast = _cast(paths[0])
+    prompt_text = "".join(e[2] for e in cast)
+    assert "THEME>" in prompt_text, f"Expected 'THEME>' in cast output, got: {prompt_text!r}"
+
+
+def test_generate_from_sc_text_sc_prompt_overrides_base(tmp_path):
+    from scriptcast.config import ScriptcastConfig
+    base = ScriptcastConfig(prompt="THEME>")
+    sc = _zero_sc(
+        ("directive", "set prompt SCRIPT>"),
+        ("directive", "scene main"),
+        ("cmd", "echo hi"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path, base=base)
+    _, cast = _cast(paths[0])
+    prompt_text = "".join(e[2] for e in cast)
+    assert "SCRIPT>" in prompt_text, f"Expected 'SCRIPT>' prompt override in cast"
+    assert "THEME>" not in prompt_text, f"Theme prompt should be overridden"
+
+
+def test_generate_from_sc_text_base_type_speed(tmp_path):
+    from scriptcast.config import ScriptcastConfig
+    # base sets type_speed=200; sc has no override; "ab" = 2 chars → 400ms
+    base = ScriptcastConfig(cmd_wait=0, exit_wait=0, enter_wait=0, type_speed=200)
+    sc = _make_sc(("cmd", "ab"))
+    paths = generate_from_sc_text(sc, tmp_path, base=base)
+    _, cast = _cast(paths[0])
+    assert max(e[0] for e in cast) >= 0.4
+
+
+def test_generate_from_sc_reads_file_with_base(tmp_path):
+    from scriptcast.config import ScriptcastConfig
+    base = ScriptcastConfig(prompt="FILE>")
+    sc = _zero_sc(("directive", "scene main"), ("cmd", "echo hi"))
+    sc_file = tmp_path / "demo.sc"
+    sc_file.write_text(sc)
+    out = tmp_path / "out"
+    out.mkdir()
+    paths = generate_from_sc(sc_file, out, base=base)
+    _, cast = _cast(paths[0])
+    prompt_text = "".join(e[2] for e in cast)
+    assert "FILE>" in prompt_text

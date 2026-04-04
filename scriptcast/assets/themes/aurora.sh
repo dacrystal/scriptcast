@@ -17,3 +17,4 @@
 : SC set theme-shadow-radius 20
 : SC set theme-shadow-offset-y 21
 : SC set theme-shadow-offset-x 0
+: SC set prompt "\x1b[92m> \x1b[0m"

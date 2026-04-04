@@ -8,8 +8,7 @@
 : SC set cmd_wait 500
 : SC set exit_wait 1000
 : SC set width 80
-: SC set height 24
-: SC set prompt "\x1b[92m> \x1b[0m"
+: SC set height 10
 : SC set terminal-theme dark
 : SC set input_wait 300
 : SC set enter_wait 100

@@ -5,8 +5,6 @@
 : SC set theme-frame-bar-title Terminal
 : SC set theme-frame-bar-color ffffff30
 : SC set theme-frame-bar-buttons true
-: SC set theme-watermark Demo
-# : SC set theme-watermark-color ffffff
 : SC set theme-scriptcast-watermark true
 : SC set theme-background 1a1a2e,16213e
 : SC set theme-margin 32 32 64

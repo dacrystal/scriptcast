@@ -15,7 +15,6 @@ def test_defaults():
     assert c.prompt == "$ "
     assert c.directive_prefix == "SC"
     assert c.trace_prefix == "+"
-    assert c.show_title is False
     assert c.split_scenes is False
 
 def test_apply_set_int():
@@ -81,9 +80,9 @@ def test_apply_word_speed():
     assert c.word_speed == 80
 
 
-def test_frame_config_defaults():
-    from scriptcast.config import FrameConfig
-    c = FrameConfig()
+def test_theme_config_defaults():
+    from scriptcast.config import ThemeConfig
+    c = ThemeConfig()
     assert c.frame_bar_title == ""
     # Individual padding sides
     assert c.padding_top == 14
@@ -110,42 +109,182 @@ def test_frame_config_defaults():
     assert c.frame is True
 
 
-def test_frame_config_custom():
-    from scriptcast.config import FrameConfig
-    c = FrameConfig(frame_bar_title="Demo", background="#1a1a2e,#16213e", watermark="hello")
+def test_theme_config_custom():
+    from scriptcast.config import ThemeConfig
+    c = ThemeConfig(frame_bar_title="Demo", background="#1a1a2e,#16213e", watermark="hello")
     assert c.frame_bar_title == "Demo"
     assert c.background == "#1a1a2e,#16213e"
     assert c.watermark == "hello"
 
 
-def test_frame_config_custom_padding():
-    from scriptcast.config import FrameConfig
-    c = FrameConfig(padding_top=10, padding_right=20, padding_bottom=30, padding_left=20)
+def test_theme_config_custom_padding():
+    from scriptcast.config import ThemeConfig
+    c = ThemeConfig(padding_top=10, padding_right=20, padding_bottom=30, padding_left=20)
     assert c.padding_top == 10
     assert c.padding_bottom == 30
 
 
-def test_frame_config_custom_margin():
-    from scriptcast.config import FrameConfig
-    c = FrameConfig(margin_top=40, margin_bottom=80)
+def test_theme_config_custom_margin():
+    from scriptcast.config import ThemeConfig
+    c = ThemeConfig(margin_top=40, margin_bottom=80)
     assert c.margin_top == 40
     assert c.margin_bottom == 80
     assert c.margin_left is None
 
 
-def test_frame_config_frame_default_true():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame is True
+def test_theme_config_frame_default_true():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame is True
 
-def test_frame_config_frame_true():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig(frame=True).frame is True
+def test_theme_config_frame_true():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig(frame=True).frame is True
 
 
-def test_frame_config_scriptcast_watermark_default():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().scriptcast_watermark is True
+def test_theme_config_scriptcast_watermark_default():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().scriptcast_watermark is True
 
-def test_frame_config_scriptcast_watermark_disabled():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig(scriptcast_watermark=False).scriptcast_watermark is False
+def test_theme_config_scriptcast_watermark_disabled():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig(scriptcast_watermark=False).scriptcast_watermark is False
+
+
+def test_theme_config_apply_string():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("background", "ff0000,0000ff")
+    assert tc.background == "ff0000,0000ff"
+
+def test_theme_config_apply_int():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("radius", "20")
+    assert tc.radius == 20
+
+def test_theme_config_apply_bool_true():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig(shadow=False)
+    tc.apply("shadow", "true")
+    assert tc.shadow is True
+
+def test_theme_config_apply_bool_false():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig(frame=True)
+    tc.apply("frame", "false")
+    assert tc.frame is False
+
+def test_theme_config_apply_bool_scriptcast_watermark():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig(scriptcast_watermark=True)
+    tc.apply("scriptcast-watermark", "false")
+    assert tc.scriptcast_watermark is False
+
+def test_theme_config_apply_margin_shorthand_one():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("margin", "60")
+    assert (tc.margin_top, tc.margin_right, tc.margin_bottom, tc.margin_left) == (60, 60, 60, 60)
+
+def test_theme_config_apply_margin_shorthand_three():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("margin", "32 32 64")
+    assert tc.margin_top == 32
+    assert tc.margin_right == 32
+    assert tc.margin_bottom == 64
+    assert tc.margin_left == 32
+
+def test_theme_config_apply_padding_shorthand():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("padding", "10 20")
+    assert (tc.padding_top, tc.padding_bottom) == (10, 10)
+    assert (tc.padding_left, tc.padding_right) == (20, 20)
+
+def test_theme_config_apply_margin_individual():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("margin-bottom", "120")
+    assert tc.margin_bottom == 120
+    assert tc.margin_top is None  # unchanged
+
+def test_theme_config_apply_frame_bar_bool():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig(frame_bar=True)
+    tc.apply("frame-bar", "false")
+    assert tc.frame_bar is False
+
+def test_theme_config_apply_frame_bar_title():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("frame-bar-title", "My Terminal")
+    assert tc.frame_bar_title == "My Terminal"
+
+def test_theme_config_apply_nullable_none():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig(background="ff0000")
+    tc.apply("background", "none")
+    assert tc.background is None
+
+def test_theme_config_apply_unknown_key_ignored():
+    from scriptcast.config import ThemeConfig
+    tc = ThemeConfig()
+    tc.apply("nonexistent-key", "value")  # must not raise
+
+
+def test_scriptcast_config_has_theme():
+    from scriptcast.config import ScriptcastConfig, ThemeConfig
+    sc = ScriptcastConfig()
+    assert isinstance(sc.theme, ThemeConfig)
+
+def test_scriptcast_config_theme_defaults():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    assert sc.theme.frame is True
+    assert sc.theme.background == "1e1b4b,0d3b66"
+
+def test_scriptcast_config_apply_theme_key():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc.apply("set", ["theme-radius", "20"])
+    assert sc.theme.radius == 20
+
+def test_scriptcast_config_apply_theme_background():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc.apply("set", ["theme-background", "ff0000,0000ff"])
+    assert sc.theme.background == "ff0000,0000ff"
+
+def test_scriptcast_config_apply_theme_bool():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc.apply("set", ["theme-frame", "false"])
+    assert sc.theme.frame is False
+
+def test_scriptcast_config_apply_theme_margin():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc.apply("set", ["theme-margin", "32 32 64"])
+    assert sc.theme.margin_bottom == 64
+
+def test_scriptcast_config_apply_terminal_theme_not_delegated():
+    """terminal-theme must NOT be routed to ThemeConfig; stays on ScriptcastConfig."""
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc.apply("set", ["terminal-theme", "light"])
+    assert sc.terminal_theme == "light"
+
+def test_copy_deep_copies_theme():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc2 = sc.copy()
+    sc2.theme.radius = 999
+    assert sc.theme.radius == 12  # unchanged
+
+def test_copy_is_still_independent_for_scalar():
+    from scriptcast.config import ScriptcastConfig
+    sc = ScriptcastConfig()
+    sc2 = sc.copy()
+    sc2.type_speed = 999
+    assert sc.type_speed == 40

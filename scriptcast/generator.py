@@ -10,21 +10,80 @@ from .config import ScriptcastConfig
 from .registry import build_directives
 
 
+def build_config_from_sc_text(
+    sc_text: str,
+    base: ScriptcastConfig | None = None,
+) -> ScriptcastConfig:
+    """Parse .sc JSONL header and pre-scene set directives into a ScriptcastConfig.
+
+    Reads the header for width/height/directive-prefix, then applies all 'set'
+    directives that appear before the first 'scene' directive. Stops at the first
+    scene so per-scene overrides don't bleed into the base config.
+
+    If *base* is provided, its fields serve as defaults; the .sc header and
+    directives override them.  Use this to layer a script's config on top of a
+    theme config so the theme acts as a template.
+    """
+    lines = sc_text.splitlines()
+    if not lines:
+        return base.copy() if base is not None else ScriptcastConfig()
+
+    try:
+        header = json.loads(lines[0])
+    except json.JSONDecodeError:
+        return base.copy() if base is not None else ScriptcastConfig()
+
+    if base is not None:
+        config = base.copy()
+        config.directive_prefix = header.get("directive-prefix", config.directive_prefix)
+        config.width = header.get("width", config.width)
+        config.height = header.get("height", config.height)
+    else:
+        config = ScriptcastConfig(
+            directive_prefix=header.get("directive-prefix", "SC"),
+            width=header.get("width", 100),
+            height=header.get("height", 28),
+        )
+
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, list) or len(row) < 3:
+            continue
+        _, typ, text = row[0], row[1], row[2]
+        if typ != "directive":
+            continue
+        parts = shlex.split(str(text))
+        if not parts:
+            continue
+        if parts[0] == "scene":
+            break
+        if parts[0] == "set" and len(parts) >= 3:
+            config.apply("set", parts[1:])
+
+    return config
+
+
 def generate_from_sc(
     sc_path: Path,
     output_dir: Path,
     output_stem: str | None = None,
     *,
-    show_title: bool = False,
     split_scenes: bool = False,
+    base: ScriptcastConfig | None = None,
 ) -> list[Path]:
     """Read a JSONL .sc file and write .cast file(s) to output_dir."""
     return generate_from_sc_text(
         sc_path.read_text(),
         output_dir,
         output_stem=output_stem or sc_path.stem,
-        show_title=show_title,
         split_scenes=split_scenes,
+        base=base,
     )
 
 
@@ -33,21 +92,31 @@ def generate_from_sc_text(
     output_dir: Path,
     output_stem: str = "output",
     *,
-    show_title: bool = False,
     split_scenes: bool = False,
+    base: ScriptcastConfig | None = None,
 ) -> list[Path]:
-    """Convert JSONL .sc text to .cast file(s). Returns list of written paths."""
+    """Convert JSONL .sc text to .cast file(s). Returns list of written paths.
+
+    If *base* is provided, its fields serve as defaults for the generated config.
+    Pre-scene ``set`` directives in the .sc text still override the base, so a
+    theme passed as *base* acts as a template that the script can override.
+    """
     lines = sc_text.splitlines()
     if not lines:
         return []
 
     header = json.loads(lines[0])
-    config = ScriptcastConfig(
-        directive_prefix=header.get("directive-prefix", "SC"),
-        width=header.get("width", 100),
-        height=header.get("height", 28),
-    )
-    config.show_title = show_title
+    if base is not None:
+        config = base.copy()
+        config.directive_prefix = header.get("directive-prefix", config.directive_prefix)
+        config.width = header.get("width", config.width)
+        config.height = header.get("height", config.height)
+    else:
+        config = ScriptcastConfig(
+            directive_prefix=header.get("directive-prefix", "SC"),
+            width=header.get("width", 100),
+            height=header.get("height", 28),
+        )
     config.split_scenes = split_scenes
 
     events: list[tuple] = []
@@ -157,8 +226,6 @@ def _render_scene_lines(
     gen_registry = {d.handles: d for d in all_directives if d.handles is not None}
 
     lines.append(json.dumps([round(cursor, 6), "o", "\x1b[2J\x1b[H"]))
-    if active.show_title:
-        lines.append(json.dumps([round(cursor, 6), "o", f"{scene_name}\r\n"]))
     cursor += active.enter_wait / 1000.0
 
     queue: deque[tuple] = deque(events)

@@ -186,8 +186,7 @@ def export(
     split_scenes: bool,
 ) -> None:
     """Generate GIF or PNG animations from .sc, .cast, or .sh files."""
-    from .config import FrameConfig, ScriptcastConfig
-    from .theme import apply_theme_to_configs, load_theme, scan_sc_for_theme
+    from .generator import build_config_from_sc_text
 
     in_path = Path(input_file)
     suffix = in_path.suffix.lower()
@@ -199,47 +198,55 @@ def export(
             f"Unsupported file type '{suffix}'. Expected .sc, .cast, or .sh."
         )
 
-    frame_config = FrameConfig()
+    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
 
     # For .sh: record first to produce a .sc file
     sc_path: Path | None = None
     if suffix == ".sh":
-        config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
         sc_path = out_dir / in_path.with_suffix(".sc").name
         do_record(in_path, sc_path, config, resolved_shell)
     elif suffix == ".sc":
         sc_path = in_path
 
-    # Theme loading from .sc (not applicable for .cast)
-    if sc_path is not None and sc_path.exists():
-        sc_theme = scan_sc_for_theme(sc_path)
-        if sc_theme:
-            dummy_sc = ScriptcastConfig()  # theme recorder-config fields are unused in export
-            apply_theme_to_configs(sc_theme, frame_config, dummy_sc)
-
+    # Apply explicit --theme flag first: record the theme .sh via the same pipeline.
+    # The theme becomes the base config; the .sc directives layer on top.
+    theme_base: ScriptcastConfig | None = None
     if theme:
-        dummy_sc = ScriptcastConfig()  # theme recorder-config fields are unused in export
+        _BUILTIN_THEMES_DIR = Path(__file__).parent / "assets" / "themes"
+        builtin = _BUILTIN_THEMES_DIR / f"{theme}.sh"
+        theme_path = builtin if builtin.exists() else Path(theme)
+        if not theme_path.exists():
+            raise click.ClickException(f"Theme not found: {theme!r}")
+        tmp_fd, tmp_sc_str = tempfile.mkstemp(suffix=".sc")
+        os.close(tmp_fd)
+        tmp_sc_path = Path(tmp_sc_str)
         try:
-            theme_dict = load_theme(theme)
-        except FileNotFoundError as e:
-            raise click.ClickException(str(e))
-        apply_theme_to_configs(theme_dict, frame_config, dummy_sc)
+            do_record(theme_path, tmp_sc_path, config, resolved_shell)
+            theme_base = build_config_from_sc_text(tmp_sc_path.read_text())
+        finally:
+            tmp_sc_path.unlink(missing_ok=True)
+
+    # Build ScriptcastConfig (with embedded ThemeConfig) from .sc, using theme as base
+    if sc_path is not None and sc_path.exists():
+        sc_cfg = build_config_from_sc_text(sc_path.read_text(), base=theme_base)
+    else:
+        sc_cfg = theme_base if theme_base is not None else ScriptcastConfig()
 
     # Resolve cast file list
     if suffix == ".cast":
         cast_paths = [in_path]
     else:
-        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes)
+        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes, base=theme_base)
 
     for cast_path in cast_paths:
         try:
             export_path = generate_export(
                 cast_path,
-                frame_config if frame_config.frame else None,
+                sc_cfg.theme if sc_cfg.theme.frame else None,
                 format=output_format,
             )
-            if not frame_config.frame and frame_config.scriptcast_watermark:
-                apply_scriptcast_watermark(export_path, frame_config)
+            if not sc_cfg.theme.frame and sc_cfg.theme.scriptcast_watermark:
+                apply_scriptcast_watermark(export_path, sc_cfg.theme)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
         click.echo(f"Generated: {export_path}")

@@ -2,50 +2,50 @@
 
 import pytest
 
-# ------------------------------------------------------------------ FrameConfig
-def test_frame_config_has_frame_bar():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame_bar is True
+# ------------------------------------------------------------------ ThemeConfig
+def test_theme_config_has_frame_bar():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame_bar is True
 
 
-def test_frame_config_has_frame_bar_title():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame_bar_title == ""
+def test_theme_config_has_frame_bar_title():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame_bar_title == ""
 
 
-def test_frame_config_frame_bar_color_default():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame_bar_color == "252535"
+def test_theme_config_frame_bar_color_default():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame_bar_color == "252535"
 
 
-def test_frame_config_frame_bar_buttons_default():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame_bar_buttons is True
+def test_theme_config_frame_bar_buttons_default():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame_bar_buttons is True
 
 
-def test_frame_config_shadow_offset_x_default():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().shadow_offset_x == 0
+def test_theme_config_shadow_offset_x_default():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().shadow_offset_x == 0
 
 
-def test_frame_config_no_title_field():
-    from scriptcast.config import FrameConfig
-    assert not hasattr(FrameConfig(), "title")
+def test_theme_config_no_title_field():
+    from scriptcast.config import ThemeConfig
+    assert not hasattr(ThemeConfig(), "title")
 
 
-def test_frame_config_default_background_is_aurora():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().background == "1e1b4b,0d3b66"
+def test_theme_config_default_background_is_aurora():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().background == "1e1b4b,0d3b66"
 
 
-def test_frame_config_default_frame_is_true():
-    from scriptcast.config import FrameConfig
-    assert FrameConfig().frame is True
+def test_theme_config_default_frame_is_true():
+    from scriptcast.config import ThemeConfig
+    assert ThemeConfig().frame is True
 
 
-def test_frame_config_default_colors_have_no_hash():
-    from scriptcast.config import FrameConfig
-    cfg = FrameConfig()
+def test_theme_config_default_colors_have_no_hash():
+    from scriptcast.config import ThemeConfig
+    cfg = ThemeConfig()
     assert not cfg.border_color.startswith("#")
     assert not cfg.frame_bar_color.startswith("#")
     assert not cfg.shadow_color.startswith("#")
@@ -54,9 +54,9 @@ def test_frame_config_default_colors_have_no_hash():
 
 # ------------------------------------------------------------------ Layout
 def test_layout_basic_no_margin_no_border():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         padding_left=14, padding_right=14, padding_top=14, padding_bottom=14,
         border_width=0,
         margin_top=None, margin_right=None, margin_bottom=None, margin_left=None,
@@ -76,9 +76,9 @@ def test_layout_basic_no_margin_no_border():
 
 
 def test_layout_with_margin():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         padding_left=14, padding_right=14, padding_top=14, padding_bottom=14,
         border_width=0,
         margin_top=82, margin_right=82, margin_bottom=82, margin_left=82,
@@ -93,9 +93,9 @@ def test_layout_with_margin():
 
 
 def test_layout_border_shifts_window_and_canvas():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         padding_left=14, padding_right=14, padding_top=14, padding_bottom=14,
         border_width=10,
         margin_top=None, margin_right=None, margin_bottom=None, margin_left=None,
@@ -115,9 +115,9 @@ def test_layout_border_shifts_window_and_canvas():
 
 
 def test_layout_frame_bar_false_removes_title_bar_height():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         padding_left=14, padding_right=14, padding_top=14, padding_bottom=14,
         border_width=0,
         margin_top=None, margin_right=None, margin_bottom=None, margin_left=None,
@@ -131,9 +131,9 @@ def test_layout_frame_bar_false_removes_title_bar_height():
 
 
 def test_layout_border_zero_is_simple():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         padding_left=0, padding_right=0, padding_top=0, padding_bottom=0,
         border_width=0,
         margin_top=None, margin_right=None, margin_bottom=None, margin_left=None,
@@ -173,21 +173,21 @@ def test_hex_rgba_invalid_length_raises():
 
 # ------------------------------------------------------------------ _resolve_margin_sides
 def test_resolve_margin_sides_no_background():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _resolve_margin_sides
-    assert _resolve_margin_sides(FrameConfig(background=None)) == (0, 0, 0, 0)
+    assert _resolve_margin_sides(ThemeConfig(background=None)) == (0, 0, 0, 0)
 
 
 def test_resolve_margin_sides_with_background_auto():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _resolve_margin_sides
-    assert _resolve_margin_sides(FrameConfig(background="#ff0000")) == (82, 82, 82, 82)
+    assert _resolve_margin_sides(ThemeConfig(background="#ff0000")) == (82, 82, 82, 82)
 
 
 def test_resolve_margin_sides_explicit_override():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _resolve_margin_sides
-    config = FrameConfig(
+    config = ThemeConfig(
         background="#ff0000",
         margin_top=10, margin_right=20, margin_bottom=30, margin_left=20,
     )
@@ -195,9 +195,9 @@ def test_resolve_margin_sides_explicit_override():
 
 
 def test_resolve_margin_sides_partial_override():
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _resolve_margin_sides
-    config = FrameConfig(background="#ff0000", margin_bottom=120)
+    config = ThemeConfig(background="#ff0000", margin_bottom=120)
     t, r, b, l = _resolve_margin_sides(config)
     assert t == 82 and r == 82 and b == 120 and l == 82
 
@@ -216,9 +216,9 @@ def test_build_svg_removed():
 # ------------------------------------------------------------------ _build_bg_shadow
 def test_bg_shadow_none_background_transparent():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background=None, shadow=False)
+    config = ThemeConfig(background=None, shadow=False)
     layout = build_layout(100, 50, config)
     result = _build_bg_shadow(layout, config)
     assert result.size == (layout.canvas_w, layout.canvas_h)
@@ -228,9 +228,9 @@ def test_bg_shadow_none_background_transparent():
 
 def test_bg_shadow_solid_color():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background="#ff0000", shadow=False)
+    config = ThemeConfig(background="#ff0000", shadow=False)
     layout = build_layout(100, 50, config)
     result = _build_bg_shadow(layout, config)
     r, g, b, a = result.getpixel((layout.canvas_w // 2, layout.canvas_h // 2))
@@ -239,9 +239,9 @@ def test_bg_shadow_solid_color():
 
 def test_bg_shadow_gradient_left_color1():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background="#ff0000,#0000ff", shadow=False)
+    config = ThemeConfig(background="#ff0000,#0000ff", shadow=False)
     layout = build_layout(100, 50, config)
     result = _build_bg_shadow(layout, config)
     r, g, b, a = result.getpixel((0, layout.canvas_h // 2))
@@ -250,9 +250,9 @@ def test_bg_shadow_gradient_left_color1():
 
 def test_bg_shadow_gradient_right_color2():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background="#ff0000,#0000ff", shadow=False)
+    config = ThemeConfig(background="#ff0000,#0000ff", shadow=False)
     layout = build_layout(100, 50, config)
     result = _build_bg_shadow(layout, config)
     r, g, b, a = result.getpixel((layout.canvas_w - 1, layout.canvas_h // 2))
@@ -261,9 +261,9 @@ def test_bg_shadow_gradient_right_color2():
 
 def test_bg_shadow_gradient_too_many_stops_raises():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background="#ff0000,#00ff00,#0000ff", shadow=False)
+    config = ThemeConfig(background="#ff0000,#00ff00,#0000ff", shadow=False)
     layout = build_layout(100, 50, config)
     with pytest.raises(ValueError, match="2 color stops"):
         _build_bg_shadow(layout, config)
@@ -272,9 +272,9 @@ def test_bg_shadow_gradient_too_many_stops_raises():
 def test_bg_shadow_adds_alpha_near_window():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(
+    config = ThemeConfig(
         background="#ffffff",
         shadow=True, shadow_radius=5, shadow_offset_y=10, shadow_offset_x=0,
         shadow_color="#000000ff", radius=0,
@@ -290,9 +290,9 @@ def test_bg_shadow_adds_alpha_near_window():
 
 def test_bg_shadow_disabled_no_change():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
-    config = FrameConfig(background="#aabbcc", shadow=False)
+    config = ThemeConfig(background="#aabbcc", shadow=False)
     layout = build_layout(100, 50, config)
     r1 = _build_bg_shadow(layout, config)
     r2 = _build_bg_shadow(layout, config)
@@ -303,10 +303,10 @@ def test_bg_shadow_disabled_no_change():
 def test_preprocess_frames_padded_size():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     frame = Image.new("RGBA", (100, 50), (40, 42, 54, 255))
-    config = FrameConfig(padding_left=10, padding_right=10, padding_top=5, padding_bottom=5)
+    config = ThemeConfig(padding_left=10, padding_right=10, padding_top=5, padding_bottom=5)
     padded, bg = _preprocess_frames([frame], config)
     assert padded[0].size == (120, 60)   # 10+100+10 wide, 5+50+5 tall
 
@@ -314,11 +314,11 @@ def test_preprocess_frames_padded_size():
 def test_preprocess_frames_detects_bg_from_top_center():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     frame = Image.new("RGBA", (100, 50), (0, 0, 0, 255))
     frame.putpixel((50, 1), (40, 42, 54, 255))   # distinctive colour at sample point
-    config = FrameConfig(padding_left=0, padding_right=0, padding_top=0, padding_bottom=0)
+    config = ThemeConfig(padding_left=0, padding_right=0, padding_top=0, padding_bottom=0)
     _, bg = _preprocess_frames([frame], config)
     assert bg == (40, 42, 54)
 
@@ -326,14 +326,14 @@ def test_preprocess_frames_detects_bg_from_top_center():
 def test_preprocess_frames_transparent_corners_show_bg():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     w, h = 50, 30
     frame = Image.new("RGBA", (w, h), (255, 255, 255, 255))
     frame.putpixel((0, 0), (0, 0, 0, 0))          # transparent top-left (like agg)
     bg_color = (40, 42, 54)
     frame.putpixel((w // 2, 1), (*bg_color, 255))  # set the bg-sample pixel
-    config = FrameConfig(padding_left=5, padding_right=5, padding_top=5, padding_bottom=5)
+    config = ThemeConfig(padding_left=5, padding_right=5, padding_top=5, padding_bottom=5)
     padded_frames, _ = _preprocess_frames([frame], config)
     padded = padded_frames[0]
     # (pad_left + 0, pad_top + 0) = (5, 5) — transparent corner must not overwrite bg
@@ -343,13 +343,13 @@ def test_preprocess_frames_transparent_corners_show_bg():
 def test_preprocess_frames_padding_filled_with_bg():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     w, h = 50, 30
     frame = Image.new("RGBA", (w, h), (255, 255, 255, 255))
     bg_color = (40, 42, 54)
     frame.putpixel((w // 2, 1), (*bg_color, 255))
-    config = FrameConfig(padding_left=10, padding_right=10, padding_top=10, padding_bottom=10)
+    config = ThemeConfig(padding_left=10, padding_right=10, padding_top=10, padding_bottom=10)
     padded_frames, _ = _preprocess_frames([frame], config)
     padded = padded_frames[0]
     assert padded.getpixel((0, 0))[:3] == bg_color   # outer corner is padding bg
@@ -359,9 +359,9 @@ def test_preprocess_frames_padding_filled_with_bg():
 # ------------------------------------------------------------------ _build_chrome
 def test_chrome_returns_tuple():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
+    config = ThemeConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
     result = _build_chrome(layout, config)
     assert isinstance(result, tuple) and len(result) == 2
@@ -369,9 +369,9 @@ def test_chrome_returns_tuple():
 
 def test_chrome_image_is_rgba_correct_size():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
+    config = ThemeConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
     chrome, mask = _build_chrome(layout, config)
     assert chrome.mode == "RGBA"
@@ -380,9 +380,9 @@ def test_chrome_image_is_rgba_correct_size():
 
 def test_chrome_mask_is_L_mode_correct_size():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
+    config = ThemeConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
     chrome, mask = _build_chrome(layout, config)
     assert mask.mode == "L"
@@ -391,9 +391,9 @@ def test_chrome_mask_is_L_mode_correct_size():
 
 def test_chrome_content_area_has_window_bg_color():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=True)
+    config = ThemeConfig(background=None, shadow=False, border_width=0, frame_bar=True)
     layout = build_layout(100, 50, config)
     window_bg = (20, 20, 40)   # arbitrary test colour
     chrome, mask = _build_chrome(layout, config, window_bg=window_bg)
@@ -404,9 +404,9 @@ def test_chrome_content_area_has_window_bg_color():
 
 def test_chrome_outside_window_is_transparent():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
+    config = ThemeConfig(background=None, shadow=False, border_width=0,
                          margin_top=40, margin_left=40, margin_right=40, margin_bottom=40)
     layout = build_layout(100, 50, config)
     chrome, mask = _build_chrome(layout, config)
@@ -415,9 +415,9 @@ def test_chrome_outside_window_is_transparent():
 
 def test_chrome_window_bg_area_is_opaque():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
+    config = ThemeConfig(background=None, shadow=False, border_width=0,
                          frame_bar=False, padding_left=20, padding_right=20,
                          padding_top=20, padding_bottom=20)
     layout = build_layout(100, 50, config)
@@ -429,9 +429,9 @@ def test_chrome_window_bg_area_is_opaque():
 
 def test_chrome_mask_content_center_is_255():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0)
+    config = ThemeConfig(background=None, shadow=False, border_width=0)
     layout = build_layout(100, 50, config)
     chrome, mask = _build_chrome(layout, config)
     cx = layout.content_x + layout.content_w // 2
@@ -441,9 +441,9 @@ def test_chrome_mask_content_center_is_255():
 
 def test_chrome_mask_outside_content_is_0():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
+    config = ThemeConfig(background=None, shadow=False, border_width=0,
                          margin_top=40, margin_left=40, margin_right=40, margin_bottom=40)
     layout = build_layout(100, 50, config)
     chrome, mask = _build_chrome(layout, config)
@@ -454,9 +454,9 @@ def test_chrome_mask_outside_content_is_0():
 def test_chrome_mask_top_corners_square_with_title_bar():
     """When there is a title bar the top corners of the content area must be square."""
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
+    config = ThemeConfig(background=None, shadow=False, border_width=0,
                          frame_bar=True, radius=10)
     layout = build_layout(200, 100, config)
     chrome, mask = _build_chrome(layout, config)
@@ -469,9 +469,9 @@ def test_chrome_mask_top_corners_square_with_title_bar():
 def test_chrome_mask_top_corners_rounded_without_title_bar_and_no_padding():
     """When content is flush with window top (no title bar, no top padding) top corners round."""
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config = FrameConfig(background=None, shadow=False, border_width=0,
+    config = ThemeConfig(background=None, shadow=False, border_width=0,
                          frame_bar=False, padding_top=0, padding_left=0,
                          padding_right=0, padding_bottom=0, radius=10)
     layout = build_layout(200, 100, config)
@@ -484,10 +484,10 @@ def test_chrome_mask_top_corners_rounded_without_title_bar_and_no_padding():
 
 def test_chrome_title_bar_absent_when_frame_bar_false():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config_on = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=True)
-    config_off = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=False)
+    config_on = ThemeConfig(background=None, shadow=False, border_width=0, frame_bar=True)
+    config_off = ThemeConfig(background=None, shadow=False, border_width=0, frame_bar=False)
     layout_on = build_layout(100, 50, config_on)
     layout_off = build_layout(100, 50, config_off)
     chrome_on, _ = _build_chrome(layout_on, config_on)
@@ -497,11 +497,11 @@ def test_chrome_title_bar_absent_when_frame_bar_false():
 
 def test_chrome_no_traffic_lights_when_buttons_false():
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_chrome, build_layout
-    config_yes = FrameConfig(background=None, shadow=False, border_width=0,
+    config_yes = ThemeConfig(background=None, shadow=False, border_width=0,
                               frame_bar=True, frame_bar_buttons=True)
-    config_no = FrameConfig(background=None, shadow=False, border_width=0,
+    config_no = ThemeConfig(background=None, shadow=False, border_width=0,
                              frame_bar=True, frame_bar_buttons=False)
     layout = build_layout(200, 100, config_yes)
     chrome_yes, _ = _build_chrome(layout, config_yes)
@@ -513,40 +513,40 @@ def test_chrome_no_traffic_lights_when_buttons_false():
 def test_watermark_none_returns_unchanged():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
-    result = _apply_watermark(base, FrameConfig(watermark=None))
+    result = _apply_watermark(base, ThemeConfig(watermark=None))
     assert result.tobytes() == base.tobytes()
 
 
 def test_watermark_text_modifies_image():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
-    result = _apply_watermark(base, FrameConfig(watermark="hello", watermark_size=14))
+    result = _apply_watermark(base, ThemeConfig(watermark="hello", watermark_size=14))
     assert result.tobytes() != base.tobytes()
 
 
 def test_scriptcast_watermark_disabled_returns_unchanged():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_scriptcast_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
-    result = _apply_scriptcast_watermark(base, FrameConfig(scriptcast_watermark=False))
+    result = _apply_scriptcast_watermark(base, ThemeConfig(scriptcast_watermark=False))
     assert result.tobytes() == base.tobytes()
 
 
 def test_scriptcast_watermark_enabled_modifies_image():
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_scriptcast_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
-    result = _apply_scriptcast_watermark(base, FrameConfig(scriptcast_watermark=True))
+    result = _apply_scriptcast_watermark(base, ThemeConfig(scriptcast_watermark=True))
     assert result.tobytes() != base.tobytes()
 
 
@@ -564,11 +564,11 @@ def _make_tiny_gif(path, width=40, height=20):
 
 def test_apply_export_gif_produces_gif(tmp_path):
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export
     gif = tmp_path / "out.gif"
     _make_tiny_gif(gif, 40, 20)
-    config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=False,
+    config = ThemeConfig(background=None, shadow=False, border_width=0, frame_bar=False,
                          scriptcast_watermark=False)
     apply_export(gif, config, format="gif")
     assert gif.exists()
@@ -579,11 +579,11 @@ def test_apply_export_gif_produces_gif(tmp_path):
 
 def test_apply_export_png_produces_png_file(tmp_path):
     pytest.importorskip("PIL")
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export
     gif = tmp_path / "out.gif"
     _make_tiny_gif(gif, 40, 20)
-    config = FrameConfig(background=None, shadow=False, border_width=0, frame_bar=False,
+    config = ThemeConfig(background=None, shadow=False, border_width=0, frame_bar=False,
                          scriptcast_watermark=False)
     apply_export(gif, config, format="png")
     png = tmp_path / "out.png"
@@ -593,11 +593,11 @@ def test_apply_export_png_produces_png_file(tmp_path):
 def test_apply_export_with_frame_expands_canvas(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export
     gif = tmp_path / "out.gif"
     _make_tiny_gif(gif, 40, 20)
-    config = FrameConfig(
+    config = ThemeConfig(
         background=None, shadow=False, border_width=0,
         padding_left=10, padding_right=10, padding_top=10, padding_bottom=10,
         frame_bar=True, scriptcast_watermark=False,
@@ -612,7 +612,7 @@ def test_apply_export_with_frame_expands_canvas(tmp_path):
 def test_apply_export_raises_without_pillow(tmp_path, monkeypatch):
     import sys
     monkeypatch.setitem(sys.modules, "PIL", None)
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     import importlib
     import scriptcast.export as exp_mod
     import builtins
@@ -625,7 +625,7 @@ def test_apply_export_raises_without_pillow(tmp_path, monkeypatch):
     import pytest
     gif = tmp_path / "out.gif"
     gif.write_bytes(b"GIF89a")
-    config = FrameConfig()
+    config = ThemeConfig()
     with pytest.raises(RuntimeError, match="Pillow"):
         exp_mod.apply_export(gif, config)
 
@@ -659,11 +659,11 @@ def test_generate_export_missing_agg_raises():
 
 def test_generate_export_calls_apply_export_when_config_provided(tmp_path):
     from unittest.mock import MagicMock, patch
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
     cast_file.write_text('{"version":2}\n')
-    config = FrameConfig()
+    config = ThemeConfig()
 
     def fake_run(*args, **kwargs):
         # Write to the temp gif path that agg would write to (second arg)
@@ -709,7 +709,7 @@ def test_generate_export_png_format_no_temp_files_in_cast_dir(tmp_path):
     """format='png': final .png is in cast dir, no temp gifs or pngs left behind."""
     from unittest.mock import patch, MagicMock
     from scriptcast.export import generate_export, apply_export
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
 
     cast_path = tmp_path / "demo.cast"
     cast_path.write_text('{"version":2,"width":80,"height":24}\n')
@@ -726,7 +726,7 @@ def test_generate_export_png_format_no_temp_files_in_cast_dir(tmp_path):
         out = gif_path.with_suffix(".png")
         frame.save(str(out), format="PNG")
 
-    config = FrameConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
+    config = ThemeConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
     with patch("scriptcast.export.subprocess.run", side_effect=fake_agg), \
          patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"), \
          patch("scriptcast.export.apply_export", side_effect=fake_apply_export):
@@ -759,7 +759,7 @@ def test_export_command_default_frame_passes_config(tmp_path):
     from unittest.mock import patch
     from click.testing import CliRunner
     from scriptcast.__main__ import cli
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
 
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(_sc_content())
@@ -773,7 +773,7 @@ def test_export_command_default_frame_passes_config(tmp_path):
                 result = runner.invoke(cli, ["export", str(sc_file),
                                              "--output-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert isinstance(mock_exp.call_args[0][1], FrameConfig)
+    assert isinstance(mock_exp.call_args[0][1], ThemeConfig)
 
 
 def test_export_command_error_is_clean(tmp_path):
@@ -801,7 +801,7 @@ def test_apply_export_content_visible_in_content_area(tmp_path):
     """Content pixels must appear at the content position in the output."""
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export, build_layout
 
     # Create a GIF with a solid bright-red frame
@@ -809,7 +809,7 @@ def test_apply_export_content_visible_in_content_area(tmp_path):
     f = Image.new("RGB", (80, 40), (255, 0, 0))
     f.quantize(colors=256).save(gif, save_all=True, duration=100, loop=0)
 
-    config = FrameConfig(
+    config = ThemeConfig(
         background=None, shadow=False, border_width=0,
         frame_bar=False, padding_left=0, padding_right=0,
         padding_top=0, padding_bottom=0,
@@ -831,11 +831,11 @@ def test_apply_watermark_centered_in_margin():
     """With margin_bottom set, watermark position differs from the no-margin default."""
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
 
     img = Image.new("RGBA", (400, 300), (30, 30, 30, 255))
-    config = FrameConfig(watermark="test", watermark_size=20)
+    config = ThemeConfig(watermark="test", watermark_size=20)
 
     result_with_margin = _apply_watermark(img, config, margin_bottom=82)
     result_no_margin = _apply_watermark(img, config, margin_bottom=0)
@@ -851,14 +851,14 @@ def test_apply_export_png_format_writes_png_file(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
     from scriptcast.export import apply_export
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
 
     # Create a minimal single-frame GIF
     frame = Image.new("RGBA", (80, 24), (30, 30, 30, 255))
     gif_path = tmp_path / "test.gif"
     frame.convert("RGB").save(str(gif_path), format="GIF")
 
-    config = FrameConfig(frame=False, scriptcast_watermark=False, shadow=False, background=None)
+    config = ThemeConfig(frame=False, scriptcast_watermark=False, shadow=False, background=None)
     apply_export(gif_path, config, format="png")
 
     # Should write to test.png
@@ -899,7 +899,7 @@ def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
     """Temp gif is cleaned up even when agg succeeds but processing fails."""
     from unittest.mock import patch
     from scriptcast.export import generate_export
-    from scriptcast.config import FrameConfig
+    from scriptcast.config import ThemeConfig
 
     cast_path = tmp_path / "demo.cast"
     cast_path.write_text('{"version":2,"width":80,"height":24}\n')
@@ -909,7 +909,7 @@ def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
         frame = Image.new("RGB", (80, 24), (30, 30, 30))
         frame.save(str(cmd[2]), format="GIF")
 
-    config = FrameConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
+    config = ThemeConfig(frame=True, scriptcast_watermark=False, shadow=False, background=None)
 
     with patch("scriptcast.export.subprocess.run", side_effect=fake_agg), \
          patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"), \
