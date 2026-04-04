@@ -28,7 +28,7 @@ def build_directives(dp: str = "SC", tp: str = "+") -> list[Directive]:
     to filter output lines captured inside expect sessions) is wired here.
     """
     filter_d = FilterDirective(dp, tp)
-    expect_d = ExpectDirective(dp, tp, filter_apply=filter_d.apply)
+    expect_d = ExpectDirective(dp, tp, filter_d=filter_d)
 
     core: list[Directive] = [
         RecordDirective(dp, tp),

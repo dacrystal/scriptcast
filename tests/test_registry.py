@@ -54,13 +54,13 @@ def test_expect_before_filter():
 
 @pytest.mark.skipif(shutil.which("tr") is None, reason="tr not available")
 def test_expect_directive_has_filter_apply_wired():
-    """ExpectDirective.filter_apply should use FilterDirective.apply, not the identity."""
+    """ExpectDirective._filter_d should be the shared FilterDirective instance."""
     result = build_directives()
     filter_d = next(d for d in result if isinstance(d, FilterDirective))
     expect_d = next(d for d in result if isinstance(d, ExpectDirective))
     # Set a filter that upper-cases input
     filter_d._filters = [["tr", "a-z", "A-Z"]]
-    assert expect_d._filter_apply("hello") == "HELLO"
+    assert expect_d._apply_filter("hello") == "HELLO"
 
 
 def test_build_directives_dp_tp_propagated():

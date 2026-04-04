@@ -15,5 +15,5 @@ Recording examples/showcase.sh...
   Generated: examples/showcase.cast
 EOF
 
-: SC filter sed "s#uv run##g"
+: SC filter sed "s#uv run ##g"
 uv run scriptcast export showcase.sh

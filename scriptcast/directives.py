@@ -5,7 +5,6 @@ import re
 import shlex
 import subprocess
 from collections import deque
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -94,10 +93,10 @@ class ExpectDirective(Directive):
     priority = 30
 
     def __init__(
-        self, dp: str = "SC", tp: str = "+", filter_apply: Callable[[str], str] | None = None
+        self, dp: str = "SC", tp: str = "+", filter_d: FilterDirective | None = None
     ):
         super().__init__(dp, tp)
-        self._filter_apply = filter_apply or (lambda t: t)
+        self._filter_d = filter_d
         self._expect_re = re.compile(
             rf"^:\s+{re.escape(dp)}\s+expect\s+(.+?)\s*<<(['\"]?)(\w+)\2\s*$"
         )
@@ -105,6 +104,9 @@ class ExpectDirective(Directive):
         self._mark_input_re = re.compile(
             rf"(.*?): {re.escape(dp)} mark input\s*(.*)$"
         )
+
+    def _apply_filter(self, text: str) -> str:
+        return self._filter_d.apply(text) if self._filter_d else text
 
     def pre(self, queue: deque[str]) -> list[str] | None:
         m = self._expect_re.match(queue[0].rstrip("\n\r"))
@@ -163,7 +165,7 @@ class ExpectDirective(Directive):
                 if rest.startswith(f"{self.tp} "):
                     return events
                 queue.popleft()
-                events.append(json.dumps([line_ts, "output", self._filter_apply(rest)]))
+                events.append(json.dumps([line_ts, "output", self._apply_filter(rest)]))
             return events
 
         prefix_str = f"{self.tp} : {self.dp} mark expect "
@@ -196,7 +198,7 @@ class ExpectDirective(Directive):
             queue.popleft()
             if rest.startswith("spawn "):
                 continue
-            events.append(json.dumps([line_ts, "output", self._filter_apply(rest)]))
+            events.append(json.dumps([line_ts, "output", self._apply_filter(rest)]))
 
         return events
 
@@ -210,7 +212,7 @@ class ExpectDirective(Directive):
         prefix_out = mi.group(1)
         input_text = mi.group(2).strip()
         if prefix_out.strip():
-            events.append(json.dumps([line_ts, "output", self._filter_apply(prefix_out)]))
+            events.append(json.dumps([line_ts, "output", self._apply_filter(prefix_out)]))
         if queue:
             next_ts, next_rest = queue[0]
             if next_rest.rstrip("\r") == input_text:
@@ -240,7 +242,15 @@ class FilterDirective(Directive):
         elif content.startswith(sc_filter_add):
             name, rest = "filter-add", content[len(sc_filter_add):]
         else:
-            if not content.startswith(f"{self.tp} "):
+            trace_pfx = f"{self.tp} "
+            sc_pfx = f"{self.tp} : {self.dp} "
+            if content.startswith(sc_pfx):
+                pass  # SC directive line — don't filter
+            elif content.startswith(trace_pfx):
+                # Trace/cmd line: filter the command portion after the trace prefix
+                cmd = content[len(trace_pfx):]
+                queue[0] = (ts, trace_pfx + self.apply(cmd))
+            else:
                 queue[0] = (ts, self.apply(content))
             return None
         queue.popleft()

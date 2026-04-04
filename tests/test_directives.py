@@ -224,7 +224,11 @@ def test_expect_directive_post_terminates_on_sc_directive():
 
 
 def test_expect_directive_post_applies_filter():
-    d = ExpectDirective(filter_apply=lambda t: t.replace("hello", "bye"))
+    class _StubFilter(FilterDirective):
+        def apply(self, text: str) -> str:
+            return text.replace("hello", "bye")
+
+    d = ExpectDirective(filter_d=_StubFilter())
     q = deque([
         (1.0, "+ : SC mark expect app"),
         (1.001, "+ expect"),
@@ -317,13 +321,22 @@ def test_filter_directive_transforms_output_in_place():
     assert q[0] == (1.1, "bar baz")  # content mutated
 
 
-def test_filter_directive_does_not_transform_trace_lines():
+def test_filter_directive_transforms_trace_cmd_lines():
     d = FilterDirective()
     d.post(deque([(1.0, "+ : SC filter sed 's/foo/bar/g'")]))
     q = deque([(1.1, "+ foo command")])
     result = d.post(q)
     assert result is None
-    assert q[0] == (1.1, "+ foo command")  # unchanged
+    assert q[0] == (1.1, "+ bar command")  # cmd portion filtered
+
+
+def test_filter_directive_does_not_transform_sc_directive_lines():
+    d = FilterDirective()
+    d.post(deque([(1.0, "+ : SC filter sed 's/foo/bar/g'")]))
+    q = deque([(1.1, "+ : SC mark expect foo")])
+    result = d.post(q)
+    assert result is None
+    assert q[0] == (1.1, "+ : SC mark expect foo")  # unchanged
 
 
 def test_record_directive_post_returns_none_for_non_record():
