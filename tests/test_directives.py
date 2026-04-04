@@ -64,6 +64,19 @@ def test_mock_directive_pre_custom_prefix():
     assert "(: MY mark mock; set +x; echo + cmd; cat) <<'DONE'\n" in result
 
 
+def test_mock_directive_pre_unquoted_heredoc_preserves_expansion():
+    """<<EOF (unquoted) must stay unquoted so shell variables expand in mock body."""
+    d = MockDirective()
+    q = deque([
+        ": SC mock deploy <<EOF\n",
+        "${GREEN}OK${RESET}\n",
+        "EOF\n",
+    ])
+    result = d.pre(q)
+    assert result is not None
+    assert "(: SC mark mock; set +x; echo + deploy; cat) <<EOF\n" in result
+
+
 def test_mock_directive_post_returns_none_for_non_mock():
     d = MockDirective()
     assert d.post(deque([(1.0, "something else")])) is None

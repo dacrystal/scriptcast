@@ -68,13 +68,14 @@ class MockDirective(Directive):
             return None
         queue.popleft()
         cmd_args = m.group(1).strip()
+        quote = m.group(2)
         delim = m.group(3)
         body: list[str] = []
         while queue and queue[0].rstrip("\n\r") != delim:
             body.append(queue.popleft())
         closing = queue.popleft() if queue else delim + "\n"
         return [
-            f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<'{delim}'\n",
+            f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<{quote}{delim}{quote}\n",
             *body,
             closing,
         ]
