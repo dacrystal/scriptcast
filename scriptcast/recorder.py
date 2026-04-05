@@ -1,11 +1,16 @@
 # scriptcast/recorder.py
 from __future__ import annotations
 
+import errno
+import fcntl
 import json
 import os
+import pty
 import re
+import struct
 import subprocess
 import tempfile
+import termios
 import time
 import warnings
 from pathlib import Path
@@ -15,23 +20,6 @@ from .directives import ScEvent
 from .registry import build_directives
 from .shell import get_adapter
 
-_HEX_ESC_RE = re.compile(r"\\x([0-9a-fA-F]{2})")
-_OCT_ESC_RE = re.compile(r"\\([0-7]{1,3})")
-
-
-def _decode_bash_escapes(text: str) -> str:
-    """Decode literal \\xNN hex and \\NNN octal escapes in an xtrace SC directive line.
-
-    Bash xtrace passes raw bytes through (single-quoted), so actual ESC bytes
-    need no decoding. This handles the case where the user writes double-quoted
-    strings like "\\x1b[92m..." or "\\033[92m..." — bash keeps \\x1b/\\033 as
-    literal text, which must be decoded to real Unicode code points so they are
-    stored as \\u001b in the .sc JSONL.
-    """
-    text = _HEX_ESC_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
-    text = _OCT_ESC_RE.sub(lambda m: chr(int(m.group(1), 8)), text)
-    return text
-
 
 def _parse_raw(
     raw_text: str,
@@ -40,29 +28,47 @@ def _parse_raw(
 ) -> list[ScEvent]:
     """Parse raw xtrace log text into an initial list of ScEvents.
 
-    Classification rules (applied per line):
-      "+ : SC <rest>"  →  ScEvent(ts, "dir",  decode_escapes(rest))
-      "+ <cmd>"        →  ScEvent(ts, "cmd",  cmd)
-      "<text>"         →  ScEvent(ts, "out",  text)
+    Each record has the form: "<ts> <content><term>" where <term> is one of
+    \\r\\n, \\r, \\n, or empty (last record with no terminator).  The pipe
+    reader in record() emits one record per terminator, so bare \\r progress-
+    bar updates arrive as their own records.
+
+    Classification rules (per record):
+      "+ : SC <rest>"  →  ScEvent(ts, "dir",  rest)   — terminator discarded
+      "+ <cmd>"        →  ScEvent(ts, "cmd",  cmd)    — terminator discarded
+      "<text>"         →  ScEvent(ts, "out",  text + term)  — verbatim
+
     Lines with non-float timestamps are skipped.
     """
     sc_prefix = f"{trace_prefix} : {directive_prefix} "
     trace_prefix_sp = f"{trace_prefix} "
     events: list[ScEvent] = []
-    for raw in raw_text.splitlines():
-        ts_str, _, content = raw.partition(" ")
+
+    # Split on any line terminator, keeping each terminator as a token.
+    # re.split with a capturing group gives [c0, t0, c1, t1, ..., cN].
+    parts = re.split(r'(\r\n|\r|\n)', raw_text)
+
+    i = 0
+    while i < len(parts):
+        entry = parts[i]
+        term = parts[i + 1] if i + 1 < len(parts) else ''
+        i += 2
+
+        if not entry:
+            continue
+        ts_str, _, content = entry.partition(' ')
         try:
             ts = float(ts_str)
         except ValueError:
             continue
-        content = content.rstrip("\n\r")
+
         if content.startswith(sc_prefix):
-            rest = _decode_bash_escapes(content[len(sc_prefix):])
-            events.append(ScEvent(ts, "dir", rest))
+            events.append(ScEvent(ts, "dir", content[len(sc_prefix):]))
         elif content.startswith(trace_prefix_sp):
             events.append(ScEvent(ts, "cmd", content[len(trace_prefix_sp):]))
         else:
-            events.append(ScEvent(ts, "out", content))
+            events.append(ScEvent(ts, "out", content + term))
+
     return events
 
 
@@ -116,6 +122,8 @@ def record(
 
     script_content = _preprocess(script_content, config.directive_prefix)
 
+    master_fd = -1
+    proc = None
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=".sh", delete=False, dir=tempfile.gettempdir()
     )
@@ -125,17 +133,74 @@ def record(
         tmp.flush()
         tmp.close()
 
-        proc = subprocess.Popen(
-            [shell, tmp.name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=script_path.parent,
-        )
+        master_fd, slave_fd = pty.openpty()
+        try:
+            fcntl.ioctl(
+                slave_fd, termios.TIOCSWINSZ,
+                struct.pack('HHHH', config.height, config.width, 0, 0),
+            )
+            stdin_fd = os.open('/dev/null', os.O_RDONLY)
+            try:
+                proc = subprocess.Popen(
+                    [shell, tmp.name],
+                    stdin=stdin_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    close_fds=True,
+                    cwd=script_path.parent,
+                )
+            finally:
+                os.close(slave_fd)
+                os.close(stdin_fd)
+        except Exception:
+            os.close(master_fd)
+            master_fd = -1
+            raise
+
         raw_lines: list[str] = []
-        for line in proc.stdout:  # type: ignore[union-attr]
+        buf = b""
+        while True:
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError as e:
+                if e.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            buf += chunk
+            # Emit one raw-log entry per terminator found in buf.
+            while True:
+                pos_crlf = buf.find(b'\r\n')
+                pos_lf = buf.find(b'\n')
+                pos_cr = buf.find(b'\r')
+                # bare \r: first \r not at the start of a \r\n pair
+                bare_cr = pos_cr >= 0 and (pos_crlf < 0 or pos_cr < pos_crlf)
+
+                candidates: list[tuple[int, int]] = []
+                if pos_crlf >= 0:
+                    candidates.append((pos_crlf, 2))
+                if pos_lf >= 0:
+                    candidates.append((pos_lf, 1))
+                if bare_cr:
+                    candidates.append((pos_cr, 1))
+
+                if not candidates:
+                    break
+
+                pos, tlen = min(candidates, key=lambda x: x[0])
+                ts = time.time()
+                line_str = buf[:pos].decode('utf-8', errors='replace')
+                term_str = buf[pos:pos + tlen].decode('utf-8', errors='replace')
+                buf = buf[pos + tlen:]
+                raw_lines.append(f"{ts:.3f} {line_str}{term_str}")
+
+        # Remaining bytes with no terminator (e.g. a prompt without a newline).
+        if buf:
             ts = time.time()
-            raw_lines.append(f"{ts:.3f} {line}")
+            raw_lines.append(f"{ts:.3f} {buf.decode('utf-8', errors='replace')}")
+        os.close(master_fd)
+        master_fd = -1   # signal to finally: already closed
         proc.wait()
 
         raw_text = "".join(raw_lines)
@@ -147,7 +212,7 @@ def record(
             "width": config.width,
             "height": config.height,
             "directive-prefix": config.directive_prefix,
-            "pipeline-version": 2,
+            "pipeline-version": 3,
         })
         sc_path.write_text(header + "\n" + clean_text)
 
@@ -159,4 +224,9 @@ def record(
             )
         return proc.returncode
     finally:
+        if master_fd != -1:
+            os.close(master_fd)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            proc.wait()
         os.unlink(tmp.name)

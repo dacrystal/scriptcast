@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from collections import deque
 from pathlib import Path
@@ -107,7 +108,7 @@ def generate_from_sc_text(
 
     header = json.loads(lines[0])
     pipeline_version = header.get("pipeline-version", 1)
-    if pipeline_version not in (1, 2):
+    if pipeline_version not in (1, 2, 3):
         raise ValueError(f"Unsupported .sc pipeline-version: {pipeline_version}")
     if base is not None:
         config = base.copy()
@@ -266,12 +267,16 @@ def _render_scene_lines(
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
         elif typ == "out":
-            # Suppress \r\n when the next event is expect-input — the input adds its own
-            next_typ = queue[0][1] if queue else None
-            next_text = queue[0][2] if queue else ""
-            is_before_input = next_typ == "dir" and next_text.startswith("expect-input")
-            suffix = "" if is_before_input else "\r\n"
-            lines.append(json.dumps([round(cursor, 6), "o", text + suffix]))
+            if active.cr_delay > 0 and '\r' in text:
+                # Split before each bare \r (not \r\n) for progress-bar animation
+                parts = re.split(r'(?=\r(?!\n))', text)
+                for j, part in enumerate(parts):
+                    if part:
+                        lines.append(json.dumps([round(cursor, 6), "o", part]))
+                    if j < len(parts) - 1:
+                        cursor += active.cr_delay / 1000.0
+            elif text:
+                lines.append(json.dumps([round(cursor, 6), "o", text]))
 
     lines.append(json.dumps([round(cursor, 6), "o", active.prompt]))
     cursor += active.exit_wait / 1000.0

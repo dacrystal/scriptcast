@@ -233,7 +233,7 @@ class ExpectDirective(Directive):
                 # Check for PTY echo on next line
                 if i < len(events) and events[i].type == "out":
                     next_e = events[i]
-                    if next_e.text.rstrip("\r") == input_text:
+                    if next_e.text.rstrip("\r\n") == input_text:
                         i += 1  # strip PTY echo
                         session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
                     else:
@@ -277,13 +277,22 @@ class FilterDirective(Directive):
         return out
 
     def apply(self, text: str) -> str:
+        # Separate terminator so filters operate on content only
+        if text.endswith('\r\n'):
+            term, body = '\r\n', text[:-2]
+        elif text.endswith('\n'):
+            term, body = '\n', text[:-1]
+        elif text.endswith('\r'):
+            term, body = '\r', text[:-1]
+        else:
+            term, body = '', text
         for argv in self._filters:
             try:
-                result = subprocess.run(argv, input=text, capture_output=True, text=True)
-                text = result.stdout.rstrip("\n")
+                result = subprocess.run(argv, input=body, capture_output=True, text=True)
+                body = result.stdout.rstrip('\n')
             except OSError:
-                text = ""
-        return text
+                body = ''
+        return body + term
 
 
 class RecordDirective(Directive):

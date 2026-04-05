@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 _INT_KEYS = {
     "type_speed", "cmd_wait", "input_wait", "exit_wait",
-    "width", "height", "enter_wait", "word_speed",
+    "width", "height", "enter_wait", "word_speed", "cr_delay",
 }
 _STR_KEYS = {"terminal_theme", "prompt", "directive_prefix", "trace_prefix"}
 _BOOL_KEYS = {"split_scenes"}
@@ -115,6 +115,7 @@ class ScriptcastConfig:
     exit_wait: int = 120      # ms after last output line of a command
     enter_wait: int = 80      # ms to pause at scene start, after clear and optional title
     word_speed: int | None = None  # ms extra pause after each space; None = same as type_speed
+    cr_delay: int = 0         # ms to wait between \r-split segments of an out event
     width: int = 100
     height: int = 28
     terminal_theme: str = "dark"          # was: theme

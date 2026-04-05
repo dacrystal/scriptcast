@@ -6,7 +6,7 @@ from scriptcast.generator import generate_from_sc, generate_from_sc_text
 
 def _make_sc(*events, width=80, height=24):
     header = {"version": 1, "width": width, "height": height,
-              "directive-prefix": "SC", "pipeline-version": 2}
+              "directive-prefix": "SC", "pipeline-version": 3}
     lines = [json.dumps(header)]
     ts = 1.0
     for typ, text in events:
@@ -377,3 +377,52 @@ def test_expect_input_directive_emits_chars(tmp_path):
     all_text = "".join(e[2] for e in cast)
     assert "h" in all_text
     assert "i" in all_text
+
+
+def test_out_event_no_suffix_added(tmp_path):
+    # Generator must NOT append \r\n — text is emitted verbatim
+    paths = generate_from_sc_text(_zero_sc(("out", "hello")), tmp_path)
+    _, cast = _cast(paths[0])
+    # There must be a cast event with exactly "hello" (no \r\n appended)
+    assert any(e[2] == "hello" for e in cast), \
+        "expected 'hello' verbatim; old code would emit 'hello\\r\\n'"
+
+
+def test_cr_delay_splits_bare_cr(tmp_path):
+    # out event with bare \r: with cr_delay=80, two cast events emitted at different times
+    sc = _make_sc(
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set cr_delay 80"),
+        ("out", "Loading\rDone\n"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    all_text = "".join(e[2] for e in cast)
+    assert "Loading" in all_text
+    assert "\rDone" in all_text
+    # The \r split creates two events at different timestamps
+    loading_events = [e for e in cast if "Loading" in e[2] and "\r" not in e[2]]
+    done_events = [e for e in cast if "\rDone" in e[2]]
+    assert loading_events and done_events
+    assert done_events[0][0] >= loading_events[0][0] + 0.079
+
+
+def test_crlf_not_split_by_cr_delay(tmp_path):
+    # \r\n is a line ending — cr_delay must NOT split it
+    sc = _make_sc(
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set cr_delay 80"),
+        ("out", "hello\r\n"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    # hello\r\n should appear as a single event (no split)
+    hello_events = [e for e in cast if "hello" in e[2]]
+    assert len(hello_events) == 1
+    assert hello_events[0][2] == "hello\r\n"

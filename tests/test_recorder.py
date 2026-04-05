@@ -31,7 +31,7 @@ def test_sc_file_has_jsonl_header(tmp_path):
     assert header["directive-prefix"] == "SC"
     assert "width" in header
     assert "height" in header
-    assert header["pipeline-version"] == 2
+    assert header["pipeline-version"] == 3
 
 
 def test_sc_file_contains_output_event(tmp_path):
@@ -161,7 +161,7 @@ def test_postprocess_emits_cmd_event():
 def test_postprocess_emits_output_event():
     raw = "1.000 hello\n"
     events = _parse_sc_events(_postprocess(raw))
-    assert any(e[1] == "out" and e[2] == "hello" for e in events)
+    assert any(e[1] == "out" and "hello" in e[2] for e in events)
 
 
 def test_postprocess_emits_generator_directive():
@@ -282,10 +282,10 @@ def test_postprocess_strips_pty_echo_after_input():
     )
     events = _parse_sc_events(_postprocess(raw))
     output_texts = [e[2] for e in events if e[1] == "out"]
-    assert "secret" not in output_texts
-    assert "show databases;" not in output_texts
-    assert "Welcome to FakeDB" in output_texts
-    assert "(0 rows)" in output_texts
+    assert not any("secret" in t for t in output_texts)
+    assert not any("show databases;" in t for t in output_texts)
+    assert any("Welcome to FakeDB" in t for t in output_texts)
+    assert any("(0 rows)" in t for t in output_texts)
 
 
 def test_record_mock_directive_produces_cmd_and_output_events(tmp_path):
@@ -325,36 +325,6 @@ def test_record_cwd_is_script_directory(tmp_path):
     assert "hello from helper" in content
 
 
-# --- escape sequence decoding in SC directive trace lines ---
-
-def test_postprocess_decodes_hex_escape_in_sc_directive():
-    # bash re-quotes "\x1b[92m❯ \x1b[0m" to '\x1b[92m❯ \x1b[0m' in xtrace
-    raw = "1.000 + : SC set prompt '\\x1b[92m> \\x1b[0m'\n"
-    events = _parse_sc_events(_postprocess(raw))
-    directive = next(e for e in events if e[1] == "dir")
-    assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
-    assert "\\x1b" not in directive[2]
-
-
-def test_postprocess_decodes_octal_escape_in_sc_directive():
-    # bash re-quotes "\033[92m❯ \033[0m" to '\033[92m❯ \033[0m' in xtrace
-    raw = "1.000 + : SC set prompt '\\033[92m> \\033[0m'\n"
-    events = _parse_sc_events(_postprocess(raw))
-    directive = next(e for e in events if e[1] == "dir")
-    assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
-    assert "\\033" not in directive[2]
-
-
-
-def test_postprocess_does_not_decode_escapes_in_cmd_events():
-    # regular echo -e commands must keep literal \x1b text — decoding would
-    # inject real ESC bytes into typed command text in the cast
-    raw = "1.000 + echo -e '\\x1b[92m> \\x1b[0m'\n"
-    events = _parse_sc_events(_postprocess(raw))
-    cmd = next(e for e in events if e[1] == "cmd")
-    assert "\\x1b" in cmd[2], "literal \\x1b should be preserved in cmd events"
-    assert "\x1b" not in cmd[2], "real ESC bytes must not appear in cmd events"
-
 
 def test_parse_raw_cmd_line():
     events = _parse_raw("1.000 + echo hello\n", "+", "SC")
@@ -363,7 +333,7 @@ def test_parse_raw_cmd_line():
 
 def test_parse_raw_output_line():
     events = _parse_raw("1.000 hello world\n", "+", "SC")
-    assert events == [ScEvent(1.0, "out", "hello world")]
+    assert events == [ScEvent(1.0, "out", "hello world\n")]
 
 
 def test_parse_raw_directive_line():
@@ -375,10 +345,6 @@ def test_parse_raw_skips_non_float_lines():
     events = _parse_raw("not_a_number + echo hi\n", "+", "SC")
     assert events == []
 
-
-def test_parse_raw_decodes_escapes_in_dir_events():
-    events = _parse_raw("1.000 + : SC set prompt \\x24 \n", "+", "SC")
-    assert events == [ScEvent(1.0, "dir", "set prompt $ ")]
 
 
 def test_parse_raw_custom_prefix():
@@ -406,3 +372,45 @@ def test_serialise_dir():
 
 def test_serialise_empty():
     assert _serialise([]) == ""
+
+
+def test_parse_raw_out_preserves_cr_in_content():
+    # The custom pipe reader emits one record per terminator, so a bare \r and
+    # the following \n produce two separate raw-log entries, each with its own
+    # timestamp.  _parse_raw must therefore yield two out events.
+    events = _parse_raw("1.000 Loading\r1.001 Done\n", "+", "SC")
+    assert events == [ScEvent(1.0, "out", "Loading\r"), ScEvent(1.001, "out", "Done\n")]
+
+
+def test_parse_raw_out_preserves_crlf():
+    # CRLF line ending: \r is kept, \n is the record separator
+    events = _parse_raw("1.000 hello\r\n", "+", "SC")
+    assert events == [ScEvent(1.0, "out", "hello\r\n")]
+
+
+def test_parse_raw_out_no_terminator_for_last_entry():
+    # A prompt with no trailing newline — last entry in the log
+    events = _parse_raw("1.000 Enter password: ", "+", "SC")
+    assert events == [ScEvent(1.0, "out", "Enter password: ")]
+
+
+def test_record_isatty_in_pty(tmp_path):
+    """Script sees a real TTY — isatty(stdout) is true."""
+    script = tmp_path / "demo.sh"
+    script.write_text('[ -t 1 ] && echo is_tty || echo not_tty\n')
+    sc_path = tmp_path / "demo.sc"
+    record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
+    content = sc_path.read_text()
+    assert "is_tty" in content
+    assert "not_tty" not in content
+
+
+def test_record_pty_translates_lf_to_crlf(tmp_path):
+    """PTY line discipline translates bare \\n to \\r\\n in out events."""
+    script = tmp_path / "demo.sh"
+    script.write_text('printf "hello\\n"\n')
+    sc_path = tmp_path / "demo.sc"
+    record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
+    events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
+    out_texts = [e[2] for e in events if e[1] == "out"]
+    assert any("hello\r\n" in t for t in out_texts)

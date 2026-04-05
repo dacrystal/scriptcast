@@ -288,3 +288,12 @@ def test_copy_is_still_independent_for_scalar():
     sc2 = sc.copy()
     sc2.type_speed = 999
     assert sc.type_speed == 40
+
+def test_cr_delay_default():
+    c = ScriptcastConfig()
+    assert c.cr_delay == 0
+
+def test_apply_set_cr_delay():
+    c = ScriptcastConfig()
+    c.apply("set", ["cr-delay", "80"])
+    assert c.cr_delay == 80
