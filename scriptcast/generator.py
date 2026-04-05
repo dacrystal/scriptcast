@@ -1,6 +1,4 @@
 # scriptcast/generator.py
-from __future__ import annotations
-
 import json
 import re
 import shlex
@@ -8,24 +6,19 @@ from collections import deque
 from pathlib import Path
 
 from .config import ScriptcastConfig
-from .registry import build_directives
+from .directives import build_directives
 
 
-def build_config_from_sc_text(
-    sc_text: str,
+def _parse_sc_header(
+    lines: list[str],
     base: ScriptcastConfig | None = None,
 ) -> ScriptcastConfig:
-    """Parse .sc JSONL header and pre-scene set directives into a ScriptcastConfig.
+    """Parse .sc JSONL header + pre-scene set directives into a ScriptcastConfig.
 
-    Reads the header for width/height/directive-prefix, then applies all 'set'
-    directives that appear before the first 'scene' directive. Stops at the first
-    scene so per-scene overrides don't bleed into the base config.
-
-    If *base* is provided, its fields serve as defaults; the .sc header and
-    directives override them.  Use this to layer a script's config on top of a
-    theme config so the theme acts as a template.
+    Reads the first line as a JSON header for width/height/directive-prefix.
+    Then walks subsequent lines applying 'set' directives until the first 'scene'.
+    If *base* is provided, its fields serve as defaults overridden by the header.
     """
-    lines = sc_text.splitlines()
     if not lines:
         return base.copy() if base is not None else ScriptcastConfig()
 
@@ -46,12 +39,12 @@ def build_config_from_sc_text(
             height=header.get("height", 28),
         )
 
-    for line in lines[1:]:
-        line = line.strip()
-        if not line:
+    for raw in lines[1:]:
+        raw = raw.strip()
+        if not raw:
             continue
         try:
-            row = json.loads(line)
+            row = json.loads(raw)
         except json.JSONDecodeError:
             continue
         if not isinstance(row, list) or len(row) < 3:
@@ -68,6 +61,14 @@ def build_config_from_sc_text(
             config.apply("set", parts[1:])
 
     return config
+
+
+def build_config_from_sc_text(
+    sc_text: str,
+    base: ScriptcastConfig | None = None,
+) -> ScriptcastConfig:
+    """Parse .sc JSONL header and pre-scene set directives into a ScriptcastConfig."""
+    return _parse_sc_header(sc_text.splitlines(), base)
 
 
 def generate_from_sc(
@@ -110,17 +111,8 @@ def generate_from_sc_text(
     pipeline_version = header.get("pipeline-version", 1)
     if pipeline_version not in (1, 2, 3):
         raise ValueError(f"Unsupported .sc pipeline-version: {pipeline_version}")
-    if base is not None:
-        config = base.copy()
-        config.directive_prefix = header.get("directive-prefix", config.directive_prefix)
-        config.width = header.get("width", config.width)
-        config.height = header.get("height", config.height)
-    else:
-        config = ScriptcastConfig(
-            directive_prefix=header.get("directive-prefix", "SC"),
-            width=header.get("width", 100),
-            height=header.get("height", 28),
-        )
+
+    config = _parse_sc_header(lines, base)
     config.split_scenes = split_scenes
 
     events: list[tuple] = []
@@ -133,17 +125,6 @@ def generate_from_sc_text(
             events.append((float(ts), str(typ), str(text)))
         except (json.JSONDecodeError, ValueError):
             continue
-
-    # Apply pre-scene set directives to base config
-    for _, typ, text in events:
-        if typ == "dir":
-            parts = shlex.split(text)
-            if not parts:
-                continue
-            if parts[0] == "scene":
-                break
-            if parts[0] == "set" and len(parts) >= 3:
-                config.apply("set", parts[1:])
 
     scenes = _split_scenes(events)
 

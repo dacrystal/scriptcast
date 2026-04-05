@@ -1,9 +1,8 @@
 # scriptcast/recorder.py
-from __future__ import annotations
-
 import errno
 import fcntl
 import json
+import logging
 import os
 import pty
 import re
@@ -12,13 +11,13 @@ import subprocess
 import tempfile
 import termios
 import time
-import warnings
 from pathlib import Path
 
 from .config import ScriptcastConfig
-from .directives import ScEvent
-from .registry import build_directives
+from .directives import ScEvent, build_directives
 from .shell import get_adapter
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_raw(
@@ -121,6 +120,7 @@ def record(
         _, _, script_content = script_content.partition("\n")
 
     script_content = _preprocess(script_content, config.directive_prefix)
+    logger.debug("Recording %s (shell=%s, width=%d, height=%d)", script_path.name, shell, config.width, config.height)
 
     master_fd = -1
     proc = None
@@ -203,8 +203,11 @@ def record(
         master_fd = -1   # signal to finally: already closed
         proc.wait()
 
+        logger.debug("PTY capture complete: %d raw lines", len(raw_lines))
+
         raw_text = "".join(raw_lines)
         clean_text = _postprocess(raw_text, config.trace_prefix, config.directive_prefix)
+        logger.debug("Post-processed to %d events", clean_text.count("\n"))
 
         header = json.dumps({
             "version": 1,
@@ -217,11 +220,7 @@ def record(
         sc_path.write_text(header + "\n" + clean_text)
 
         if proc.returncode != 0:
-            warnings.warn(
-                f"Script exited with non-zero status {proc.returncode}. "
-                f".sc file written anyway.",
-                UserWarning,
-            )
+            logger.warning("Script exited with non-zero status %d; .sc file written anyway.", proc.returncode)
         return proc.returncode
     finally:
         if master_fd != -1:

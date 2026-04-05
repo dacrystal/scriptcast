@@ -10,8 +10,8 @@ from scriptcast.directives import (
     RecordDirective,
     SetDirective,
     SleepDirective,
+    build_directives,
 )
-from scriptcast.registry import build_directives
 
 
 def test_build_directives_returns_list():

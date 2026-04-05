@@ -1,6 +1,4 @@
 # scriptcast/config.py
-from __future__ import annotations
-
 import copy
 import re as _re
 import typing
@@ -24,19 +22,18 @@ _BOOL_THEME_PROPS = {"shadow", "frame-bar", "frame-bar-buttons", "frame", "scrip
 
 def _parse_css_shorthand(value: str) -> tuple[int, int, int, int]:
     """Parse 1–4 space-separated ints using CSS shorthand rules (top, right, bottom, left)."""
-    parts = value.split()
-    if len(parts) == 1:
-        v = int(parts[0])
-        return (v, v, v, v)
-    if len(parts) == 2:
-        tb, lr = int(parts[0]), int(parts[1])
-        return (tb, lr, tb, lr)
-    if len(parts) == 3:
-        t, lr, b = int(parts[0]), int(parts[1]), int(parts[2])
-        return (t, lr, b, lr)
-    if len(parts) == 4:
-        return (int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]))
-    raise ValueError(f"CSS shorthand expects 1-4 values, got {len(parts)}: {value!r}")
+    vals = [int(p) for p in value.split()]
+    match len(vals):
+        case 1:
+            return (vals[0], vals[0], vals[0], vals[0])
+        case 2:
+            return (vals[0], vals[1], vals[0], vals[1])
+        case 3:
+            return (vals[0], vals[1], vals[2], vals[1])
+        case 4:
+            return (vals[0], vals[1], vals[2], vals[3])
+        case _:
+            raise ValueError(f"CSS shorthand expects 1-4 values, got {len(vals)}: {value!r}")
 
 
 @dataclass
@@ -142,7 +139,7 @@ class ScriptcastConfig:
         elif key in _BOOL_KEYS:
             setattr(self, key, value.lower() in ("1", "true", "yes"))
 
-    def copy(self) -> ScriptcastConfig:
+    def copy(self) -> "ScriptcastConfig":
         return copy.deepcopy(self)
 
     @property

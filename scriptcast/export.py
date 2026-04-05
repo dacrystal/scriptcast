@@ -1,21 +1,16 @@
 # scriptcast/export.py
-from __future__ import annotations
-
+import math
 import os
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .config import ThemeConfig
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL.Image import Dither
 
-try:
-    from PIL.Image import Image as PILImage
-except ImportError:
-    PILImage = object  # type: ignore[assignment,misc]
+from .config import ThemeConfig
 
 
 TITLE_BAR_HEIGHT = 28
@@ -65,11 +60,8 @@ class Layout:
 
 def _resolve_margin_sides(config: ThemeConfig) -> tuple[int, int, int, int]:
     auto = 82 if config.background is not None else 0
-    t = config.margin_top if config.margin_top is not None else auto
-    r = config.margin_right if config.margin_right is not None else auto
-    b = config.margin_bottom if config.margin_bottom is not None else auto
-    l = config.margin_left if config.margin_left is not None else auto
-    return (t, r, b, l)
+    sides = (config.margin_top, config.margin_right, config.margin_bottom, config.margin_left)
+    return tuple(s if s is not None else auto for s in sides)  # type: ignore[return-value]
 
 
 def build_layout(content_w: int, content_h: int, config: ThemeConfig) -> Layout:
@@ -108,9 +100,7 @@ def build_layout(content_w: int, content_h: int, config: ThemeConfig) -> Layout:
     )
 
 
-def _build_bg_shadow(layout: Layout, config: ThemeConfig) -> PILImage:
-    from PIL import Image, ImageDraw, ImageFilter
-
+def _build_bg_shadow(layout: Layout, config: ThemeConfig) -> Image.Image:
     # Background
     if config.background is None:
         base = Image.new("RGBA", (layout.canvas_w, layout.canvas_h), (0, 0, 0, 0))
@@ -174,8 +164,6 @@ def _preprocess_frames(
     Alpha-composites frame onto a terminal_bg canvas so transparent corner pixels
     show bg, not garbage palette RGB values.
     """
-    from PIL import Image
-
     first = frames[0].convert("RGBA")
     w, h = first.size
     terminal_bg: tuple[int, int, int] = first.getpixel((w // 2, 1))[:3]
@@ -209,9 +197,6 @@ def _preprocess_frames(
 
 
 def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
-    from PIL import Image
-    import math
-
     base = _hex_rgba(base_color)
     highlight = _hex_rgba(highlight_color)
 
@@ -248,15 +233,13 @@ def _build_chrome(
     layout: Layout,
     config: ThemeConfig,
     window_bg: tuple[int, int, int] = (30, 30, 30),
-) -> tuple[PILImage, PILImage]:
+) -> tuple[Image.Image, Image.Image]:
     """Build the window chrome and a content-area mask.
 
     Returns:
         chrome: RGBA image — window bg, title bar, traffic lights, border. No transparent hole.
         mask:   L-mode image — 255 where content is visible, 0 elsewhere.
     """
-    from PIL import Image, ImageDraw
-
     chrome = Image.new("RGBA", (layout.canvas_w, layout.canvas_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(chrome)
 
@@ -320,11 +303,9 @@ def _build_chrome(
     return chrome, mask
 
 
-def _apply_watermark(base: PILImage, config: ThemeConfig, margin_bottom: int = 0) -> PILImage:
+def _apply_watermark(base: Image.Image, config: ThemeConfig, margin_bottom: int = 0) -> Image.Image:
     if config.watermark is None:
         return base
-
-    from PIL import ImageDraw, ImageFont
 
     result = base.copy()
     draw = ImageDraw.Draw(result)
@@ -359,11 +340,9 @@ def _apply_watermark(base: PILImage, config: ThemeConfig, margin_bottom: int = 0
     return result
 
 
-def _apply_scriptcast_watermark(base: PILImage, config: ThemeConfig) -> PILImage:
+def _apply_scriptcast_watermark(base: Image.Image, config: ThemeConfig) -> Image.Image:
     if not config.scriptcast_watermark:
         return base
-
-    from PIL import ImageDraw, ImageFont
 
     result = base.copy()
     draw = ImageDraw.Draw(result)
@@ -388,17 +367,7 @@ def apply_scriptcast_watermark(gif_path: Path, config: ThemeConfig) -> None:
     """Overlay the ScriptCast brand watermark on an existing GIF in-place (no frame path).
 
     Used when --frame is not set but scriptcast_watermark is True.
-    Requires Pillow: pip install 'scriptcast[gif]'
     """
-    try:
-        from PIL import Image
-        from PIL.Image import Dither
-    except ImportError:
-        raise RuntimeError(
-            "Pillow is required for watermark. "
-            "Install with: pip install 'scriptcast[gif]'"
-        )
-
     if not config.scriptcast_watermark:
         return
 
@@ -447,14 +416,12 @@ def _chrome_colors(config: ThemeConfig, window_bg: tuple[int, int, int] = (30, 3
 
 
 def _build_global_palette(
-    template_rgb: PILImage,
-    rgb_canvases: list[PILImage],
+    template_rgb: Image.Image,
+    rgb_canvases: list[Image.Image],
     config: ThemeConfig,
     window_bg: tuple[int, int, int] = (30, 30, 30),
     max_samples: int = 20,
-) -> PILImage:
-    from PIL import Image
-
+) -> Image.Image:
     chrome_colors = _chrome_colors(config, window_bg)
     n_chrome = len(chrome_colors)
 
@@ -484,17 +451,7 @@ def apply_export(gif_path: Path, config: ThemeConfig, format: str = "gif") -> No
     """Post-process a GIF in-place: apply background, shadow, chrome, and watermarks.
 
     format: "gif" writes .gif (quantized 256 colours); "png" writes .png (full RGBA).
-    Requires Pillow: pip install 'scriptcast[gif]'
     """
-    try:
-        from PIL import Image
-        from PIL.Image import Dither
-    except ImportError:
-        raise RuntimeError(
-            "Pillow is required for frame overlay. "
-            "Install with: pip install 'scriptcast[gif]'"
-        )
-
     raw_frames: list[Image.Image] = []
     durations: list[int] = []
     with Image.open(gif_path) as img:
@@ -570,7 +527,6 @@ def generate_export(
 
     format: "gif" writes .gif; "png" writes .png (full RGBA). Default here is "gif"
     for API backward compatibility — the CLI defaults to "png".
-    Requires Pillow: pip install 'scriptcast[gif]'
     """
     agg = shutil.which("agg")
     if agg is None:

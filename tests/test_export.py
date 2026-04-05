@@ -609,27 +609,6 @@ def test_apply_export_with_frame_expands_canvas(tmp_path):
     assert result.size[1] > 20
 
 
-def test_apply_export_raises_without_pillow(tmp_path, monkeypatch):
-    import sys
-    monkeypatch.setitem(sys.modules, "PIL", None)
-    from scriptcast.config import ThemeConfig
-    import importlib
-    import scriptcast.export as exp_mod
-    import builtins
-    real_import = builtins.__import__
-    def mock_import(name, *args, **kwargs):
-        if name == "PIL":
-            raise ImportError("no PIL")
-        return real_import(name, *args, **kwargs)
-    monkeypatch.setattr(builtins, "__import__", mock_import)
-    import pytest
-    gif = tmp_path / "out.gif"
-    gif.write_bytes(b"GIF89a")
-    config = ThemeConfig()
-    with pytest.raises(RuntimeError, match="Pillow"):
-        exp_mod.apply_export(gif, config)
-
-
 # ------------------------------------------------------------------ generate_export
 def test_generate_export_calls_agg(tmp_path):
     from unittest.mock import MagicMock, patch

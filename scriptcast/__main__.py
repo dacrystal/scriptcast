@@ -1,6 +1,6 @@
 # scriptcast/__main__.py
-from __future__ import annotations
-
+import json
+import logging
 import os
 import platform
 import shlex
@@ -17,6 +17,8 @@ from .config import ScriptcastConfig, extract_config_prefix
 from .export import AggNotFoundError, apply_scriptcast_watermark, generate_export
 from .generator import build_config_from_sc_text, generate_from_sc
 from .recorder import record as do_record
+
+logger = logging.getLogger(__name__)
 
 
 def _default_shell() -> str:
@@ -137,6 +139,7 @@ class _ScriptOrSubcommandGroup(click.Group):
 @click.option("--trace-prefix", default="+", show_default=True)
 @click.option("--shell", default=None)
 @click.option("--split-scenes/--no-split-scenes", default=False)
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -148,6 +151,7 @@ def cli(
     trace_prefix: str,
     shell: str | None,
     split_scenes: bool,
+    verbose: bool,
 ) -> None:
     """Generate terminal demos from shell scripts, .sc files, or .cast files.
 
@@ -164,6 +168,10 @@ def cli(
 
         scriptcast [OPTIONS] INPUT
     """
+    log_level = logging.DEBUG if verbose else logging.INFO
+    log_format = "%(name)s %(levelname)s %(message)s" if verbose else "%(message)s"
+    logging.basicConfig(level=log_level, format=log_format)
+
     if ctx.invoked_subcommand is not None:
         return
 
@@ -204,11 +212,13 @@ def cli(
         trace_prefix=trace_prefix,
         shell=resolved_shell,
     )
+    logger.debug("Config: width=%d height=%d type_speed=%d prompt=%r", config.width, config.height, config.type_speed, config.prompt)
 
     # Stage 1: record (only for .sh input)
     sc_path: Path | None = None
     if suffix == ".sh":
         sc_path = out_dir / in_path.with_suffix(".sc").name
+        logger.info("Recording %s ...", in_path.name)
         do_record(in_path, sc_path, config, resolved_shell)
     elif suffix == ".sc":
         sc_path = in_path
@@ -217,7 +227,7 @@ def cli(
     if suffix == ".cast":
         cast_paths = [in_path]
     else:
-        assert sc_path is not None
+        logger.info("Generating .cast ...")
         cast_paths = generate_from_sc(
             sc_path,
             out_dir,
@@ -228,10 +238,11 @@ def cli(
 
     if no_export:
         for p in cast_paths:
-            click.echo(f"Generated: {p}")
+            logger.info("Generated: %s", p)
         return
 
     # Stage 3: export
+    logger.info("Exporting to %s ...", output_format.upper())
     for cast_path in cast_paths:
         try:
             export_path = generate_export(
@@ -243,7 +254,7 @@ def cli(
                 apply_scriptcast_watermark(export_path, config.theme)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
-        click.echo(f"Generated: {export_path}")
+        logger.info("Generated: %s", export_path)
 
 
 @cli.command()
@@ -278,11 +289,10 @@ def install(prefix: str) -> None:
 
     agg_url = f"https://github.com/asciinema/agg/releases/latest/download/{agg_asset}"
 
-    import json as _json
     with urllib.request.urlopen(
         "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest"
     ) as _resp:
-        _release = _json.loads(_resp.read())
+        _release = json.loads(_resp.read())
     font_url = next(
         a["browser_download_url"]
         for a in _release["assets"]

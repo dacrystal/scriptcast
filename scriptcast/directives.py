@@ -1,17 +1,44 @@
-from __future__ import annotations
-
 import json
 import re
 import shlex
 import subprocess
+import warnings
 from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from importlib.metadata import entry_points
+from typing import Iterator, Literal
 
-if TYPE_CHECKING:
-    from .config import ScriptcastConfig
+from .config import ScriptcastConfig
 
 EventType = Literal["cmd", "out", "dir"]
+
+
+def _iter_heredoc(
+    lines: list[str],
+    pattern: re.Pattern[str],
+) -> Iterator[str | tuple[re.Match[str], list[str], str]]:
+    """Iterate lines, yielding either pass-through strings or heredoc block tuples.
+
+    For each line that matches *pattern*, collects the body lines up to the
+    heredoc delimiter and yields ``(match, body_lines, closing_line)``.
+    Non-matching lines are yielded as plain strings.
+    """
+    i = 0
+    while i < len(lines):
+        m = pattern.match(lines[i].rstrip("\n\r"))
+        if not m:
+            yield lines[i]
+            i += 1
+            continue
+        delim = m.group(3)
+        i += 1
+        body: list[str] = []
+        while i < len(lines) and lines[i].rstrip("\n\r") != delim:
+            body.append(lines[i])
+            i += 1
+        closing = lines[i] if i < len(lines) else delim + "\n"
+        i += 1
+        yield m, body, closing
 
 
 @dataclass(frozen=True)
@@ -67,23 +94,14 @@ class MockDirective(Directive):
 
     def pre(self, lines: list[str]) -> list[str]:
         out: list[str] = []
-        i = 0
-        while i < len(lines):
-            m = self._mock_re.match(lines[i].rstrip("\n\r"))
-            if not m:
-                out.append(lines[i])
-                i += 1
+        for item in _iter_heredoc(lines, self._mock_re):
+            if isinstance(item, str):
+                out.append(item)
                 continue
+            m, body, closing = item
             cmd_args = m.group(1).strip()
             quote = m.group(2)
             delim = m.group(3)
-            i += 1
-            body: list[str] = []
-            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
-                body.append(lines[i])
-                i += 1
-            closing = lines[i] if i < len(lines) else delim + "\n"
-            i += 1
             out.extend([
                 f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<{quote}{delim}{quote}\n",
                 *body,
@@ -123,22 +141,13 @@ class ExpectDirective(Directive):
 
     def pre(self, lines: list[str]) -> list[str]:
         out: list[str] = []
-        i = 0
-        while i < len(lines):
-            m = self._expect_re.match(lines[i].rstrip("\n\r"))
-            if not m:
-                out.append(lines[i])
-                i += 1
+        for item in _iter_heredoc(lines, self._expect_re):
+            if isinstance(item, str):
+                out.append(item)
                 continue
+            m, body, closing = item
             cmd_args = m.group(1).strip()
             delim = m.group(3)
-            i += 1
-            body: list[str] = []
-            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
-                body.append(lines[i])
-                i += 1
-            closing = lines[i] if i < len(lines) else delim + "\n"
-            i += 1
             new_body: list[str] = [f"spawn {cmd_args}\n"]
             for bl in body:
                 sm = self._send_re.match(bl.rstrip("\n\r"))
@@ -326,20 +335,12 @@ class CommentDirective(Directive):
     priority = 45
 
     def post(self, events: list[ScEvent]) -> list[ScEvent]:
-        """Convert comment directive events to cmd events."""
         out: list[ScEvent] = []
         for e in events:
-            if e.type == "dir":
-                # After _parse_raw strips "+ : SC ", the dir event text is the literal string
-                prefix = "'\\' "
-                bare = "'\\\'"
-                if e.text.startswith(prefix):
-                    rest = e.text[len(prefix):]
-                    out.append(ScEvent(e.ts, "cmd", f"# {rest}"))
-                elif e.text == bare:
-                    out.append(ScEvent(e.ts, "cmd", "#"))
-                else:
-                    out.append(e)
+            if e.type == "dir" and e.text.startswith("'\\\' "):
+                out.append(ScEvent(e.ts, "cmd", f"# {e.text[4:]}"))
+            elif e.type == "dir" and e.text == "'\\\'":
+                out.append(ScEvent(e.ts, "cmd", "#"))
             else:
                 out.append(e)
         return out
@@ -380,3 +381,30 @@ class SleepDirective(Directive):
         if len(parts) >= 2:
             cursor += int(parts[1]) / 1000.0
         return cursor, []
+
+
+def build_directives(dp: str = "SC", tp: str = "+") -> list[Directive]:
+    """Build the full sorted directive list for the given prefix settings."""
+    core: list[Directive] = [
+        RecordDirective(dp, tp),
+        MockDirective(dp, tp),
+        ExpectDirective(dp, tp),
+        FilterDirective(dp, tp),
+        CommentDirective(dp, tp),
+        SetDirective(dp, tp),
+        SleepDirective(dp, tp),
+    ]
+
+    eps = entry_points(group="scriptcast.directives")
+    plugins: list[Directive] = []
+    for ep in eps:
+        try:
+            plugins.append(ep.load()(dp, tp))
+        except Exception as exc:  # noqa: BLE001
+            warnings.warn(
+                f"Failed to load scriptcast directive plugin {ep.name!r}: {exc}",
+                UserWarning,
+                stacklevel=2,
+            )
+
+    return sorted(core + plugins, key=lambda d: d.priority)

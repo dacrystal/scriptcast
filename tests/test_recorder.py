@@ -1,5 +1,6 @@
 # tests/test_recorder.py
 import json
+import logging
 import shutil
 
 import pytest
@@ -43,15 +44,16 @@ def test_sc_file_contains_output_event(tmp_path):
     assert any(e[1] == "out" and "scriptcast_test_marker" in e[2] for e in events)
 
 
-def test_record_nonzero_exit_writes_sc_and_warns(tmp_path):
+def test_record_nonzero_exit_writes_sc_and_warns(tmp_path, caplog):
     script = tmp_path / "demo.sh"
     script.write_text("echo before\nexit 1\n")
     sc_path = tmp_path / "demo.sc"
     config = ScriptcastConfig()
     shell = shutil.which("bash")
-    with pytest.warns(UserWarning, match="non-zero"):
+    with caplog.at_level(logging.WARNING):
         record(script, sc_path, config, shell)
     assert sc_path.exists()
+    assert "non-zero" in caplog.text
 
 
 def test_record_strips_shebang(tmp_path):
