@@ -13,9 +13,9 @@ from pathlib import Path
 
 import click
 
-from .config import ScriptcastConfig
+from .config import ScriptcastConfig, extract_config_prefix
 from .export import AggNotFoundError, apply_scriptcast_watermark, generate_export
-from .generator import generate_from_sc
+from .generator import build_config_from_sc_text, generate_from_sc
 from .recorder import record as do_record
 
 
@@ -23,21 +23,69 @@ def _default_shell() -> str:
     return os.environ.get("SHELL", "bash")
 
 
-def _make_config(
+def _resolve_theme(theme: str) -> Path:
+    _BUILTIN_THEMES_DIR = Path(__file__).parent / "assets" / "themes"
+    builtin = _BUILTIN_THEMES_DIR / f"{theme}.sh"
+    theme_path = builtin if builtin.exists() else Path(theme)
+    if not theme_path.exists():
+        raise click.ClickException(f"Theme not found: {theme!r}")
+    return theme_path
+
+
+def build_config(
+    script_path: Path | None,
+    theme_path: Path | None,
     directive_prefix: str,
     trace_prefix: str,
-    shell: str | None,
-) -> tuple[ScriptcastConfig, str]:
-    config = ScriptcastConfig(
+    shell: str,
+) -> ScriptcastConfig:
+    """Build a fully resolved ScriptcastConfig before recording starts.
+
+    Layer order: defaults → theme prefix → script prefix.
+    Theme and script prefixes are concatenated into a single tmp .sh,
+    recorded (fast — all no-ops/assignments), and fed into
+    build_config_from_sc_text so shell variable expansion is handled
+    correctly (e.g. : SC set prompt "${GREEN} > ${RESET}").
+
+    For .sc inputs, also applies the .sc's pre-scene set directives on top.
+    """
+    base = ScriptcastConfig(
         directive_prefix=directive_prefix,
         trace_prefix=trace_prefix,
     )
-    resolved_shell = shell or _default_shell()
-    return config, resolved_shell
+
+    prefix_parts: list[str] = []
+    if theme_path is not None:
+        prefix_parts.append(extract_config_prefix(theme_path.read_text(), directive_prefix))
+    if script_path is not None and script_path.suffix.lower() == ".sh":
+        prefix_parts.append(extract_config_prefix(script_path.read_text(), directive_prefix))
+
+    if prefix_parts:
+        combined = "#!/bin/sh\n" + "\n".join(filter(None, prefix_parts))
+        tmp_fd, tmp_sh_str = tempfile.mkstemp(suffix=".sh")
+        os.close(tmp_fd)
+        tmp_sh = Path(tmp_sh_str)
+        tmp_sc = tmp_sh.with_suffix(".sc")
+        try:
+            tmp_sh.write_text(combined)
+            tmp_sh.chmod(0o755)
+            do_record(tmp_sh, tmp_sc, base, shell)
+            if tmp_sc.exists():
+                base = build_config_from_sc_text(tmp_sc.read_text())
+                base.directive_prefix = directive_prefix
+                base.trace_prefix = trace_prefix
+        finally:
+            tmp_sh.unlink(missing_ok=True)
+            tmp_sc.unlink(missing_ok=True)
+
+    if script_path is not None and script_path.suffix.lower() == ".sc":
+        base = build_config_from_sc_text(script_path.read_text(), base=base)
+
+    return base
 
 
 class _ScriptOrSubcommandGroup(click.Group):
-    """Click group that treats an unknown first positional as a script path.
+    """Click group that treats an unknown first positional as an input file path.
 
     Overrides ``parse_args`` so that when the first remaining token after
     option parsing is not a registered subcommand name, the group delegates to
@@ -52,8 +100,8 @@ class _ScriptOrSubcommandGroup(click.Group):
         # puts remaining tokens into ctx.args without touching _protected_args.
         rest = click.Command.parse_args(self, ctx, args)
         if rest and rest[0] not in self.commands:
-            # First remaining token is not a subcommand — treat it as a script
-            # path positional.  Keep everything in ctx.args so that
+            # First remaining token is not a subcommand — treat it as an input
+            # file path positional.  Keep everything in ctx.args so that
             # Group.invoke sees empty _protected_args and routes via
             # invoke_without_command to our callback.
             return rest
@@ -74,6 +122,17 @@ class _ScriptOrSubcommandGroup(click.Group):
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
 @click.option("--output-dir", default=None, type=click.Path())
+@click.option("--no-export", is_flag=True, default=False,
+              help="Stop after generating .cast file(s); do not export to image.")
+@click.option("--theme", default=None,
+              help="Visual theme: built-in name (e.g. 'aurora') or path to a .sh theme file.")
+@click.option(
+    "--format", "output_format",
+    default="png",
+    type=click.Choice(["gif", "png"]),
+    show_default=True,
+    help="Export format.",
+)
 @click.option("--directive-prefix", default="SC", show_default=True)
 @click.option("--trace-prefix", default="+", show_default=True)
 @click.option("--shell", default=None)
@@ -82,16 +141,28 @@ class _ScriptOrSubcommandGroup(click.Group):
 def cli(
     ctx: click.Context,
     output_dir: str | None,
+    no_export: bool,
+    theme: str | None,
+    output_format: str,
     directive_prefix: str,
     trace_prefix: str,
     shell: str | None,
     split_scenes: bool,
 ) -> None:
-    """Generate terminal demos from shell scripts.
+    """Generate terminal demos from shell scripts, .sc files, or .cast files.
 
-    Options must be placed before the script path:
+    The input file type determines the start stage:
 
-        scriptcast [OPTIONS] SCRIPT
+    \b
+      .sh   record → generate → export  (all stages)
+      .sc            generate → export
+      .cast                    export
+
+    Use --no-export to stop after the generate stage (.sh and .sc only).
+
+    Options must be placed before the input file path:
+
+        scriptcast [OPTIONS] INPUT
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -100,107 +171,41 @@ def cli(
         click.echo(ctx.get_help())
         return
 
-    script_path = Path(ctx.args[0])
     if len(ctx.args) > 1:
         raise click.UsageError(
-            f"Unexpected arguments after script path: {ctx.args[1:]}. "
-            "All options must be placed before the script path."
+            f"Unexpected arguments after input path: {ctx.args[1:]}. "
+            "All options must be placed before the input path."
         )
-    if not script_path.exists():
-        raise click.ClickException(f"Script not found: {ctx.args[0]}")
 
-    out_dir = Path(output_dir) if output_dir else script_path.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
+    in_path = Path(ctx.args[0])
+    if not in_path.exists():
+        raise click.ClickException(f"File not found: {ctx.args[0]}")
 
-    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
-    sc_path = out_dir / script_path.with_suffix(".sc").name
-    do_record(script_path, sc_path, config, resolved_shell)
-    generate_from_sc(
-        sc_path, out_dir,
-        output_stem=script_path.stem,
-        split_scenes=split_scenes,
-    )
-
-
-@cli.command()
-@click.argument("script", type=click.Path(exists=True))
-@click.option("--output-dir", default=None, type=click.Path())
-@click.option("--directive-prefix", default="SC", show_default=True)
-@click.option("--trace-prefix", default="+", show_default=True)
-@click.option("--shell", default=None)
-def record(
-    script: str,
-    output_dir: str | None,
-    directive_prefix: str,
-    trace_prefix: str,
-    shell: str | None,
-) -> None:
-    """Stage 1: run script and write .sc file."""
-    script_path = Path(script)
-    out_dir = Path(output_dir) if output_dir else script_path.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
-    sc_path = out_dir / script_path.with_suffix(".sc").name
-    do_record(script_path, sc_path, config, resolved_shell)
-    click.echo(f"Recorded: {sc_path}")
-
-
-@cli.command()
-@click.argument("sc_file", type=click.Path(exists=True))
-@click.option("--output-dir", default=None, type=click.Path())
-@click.option("--split-scenes/--no-split-scenes", default=False)
-def generate(sc_file: str, output_dir: str | None, split_scenes: bool) -> None:
-    """Stage 2: read .sc and write .cast file(s)."""
-    sc_path = Path(sc_file)
-    out_dir = Path(output_dir) if output_dir else sc_path.parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes)
-    for p in paths:
-        click.echo(f"Generated: {p}")
-
-
-@cli.command()
-@click.argument("input_file", type=click.Path(exists=True))
-@click.option("--output-dir", default=None, type=click.Path())
-@click.option("--theme", default=None,
-              help="Visual theme: built-in name (e.g. 'dark') or path to a .sh theme file.")
-@click.option(
-    "--format", "output_format",
-    default="png",
-    type=click.Choice(["gif", "png"]),
-    show_default=True,
-    help="Output format.",
-)
-@click.option("--directive-prefix", default="SC", show_default=True)
-@click.option("--trace-prefix", default="+", show_default=True)
-@click.option("--shell", default=None)
-@click.option("--split-scenes/--no-split-scenes", default=False)
-def export(
-    input_file: str,
-    output_dir: str | None,
-    theme: str | None,
-    output_format: str,
-    directive_prefix: str,
-    trace_prefix: str,
-    shell: str | None,
-    split_scenes: bool,
-) -> None:
-    """Generate GIF or PNG animations from .sc, .cast, or .sh files."""
-    from .generator import build_config_from_sc_text
-
-    in_path = Path(input_file)
     suffix = in_path.suffix.lower()
+    if suffix not in (".sh", ".sc", ".cast"):
+        raise click.UsageError(
+            f"Unsupported file type '{suffix}'. Expected .sh, .sc, or .cast."
+        )
+
+    if no_export and suffix == ".cast":
+        raise click.UsageError(
+            "--no-export requires a .sh or .sc input (a .cast file is already at the export stage)."
+        )
+
     out_dir = Path(output_dir) if output_dir else in_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
+    resolved_shell = shell or _default_shell()
+    theme_path = _resolve_theme(theme) if theme else None
 
-    if suffix not in (".sc", ".cast", ".sh"):
-        raise click.UsageError(
-            f"Unsupported file type '{suffix}'. Expected .sc, .cast, or .sh."
-        )
+    config = build_config(
+        script_path=in_path if suffix != ".cast" else None,
+        theme_path=theme_path,
+        directive_prefix=directive_prefix,
+        trace_prefix=trace_prefix,
+        shell=resolved_shell,
+    )
 
-    config, resolved_shell = _make_config(directive_prefix, trace_prefix, shell)
-
-    # For .sh: record first to produce a .sc file
+    # Stage 1: record (only for .sh input)
     sc_path: Path | None = None
     if suffix == ".sh":
         sc_path = out_dir / in_path.with_suffix(".sc").name
@@ -208,45 +213,34 @@ def export(
     elif suffix == ".sc":
         sc_path = in_path
 
-    # Apply explicit --theme flag first: record the theme .sh via the same pipeline.
-    # The theme becomes the base config; the .sc directives layer on top.
-    theme_base: ScriptcastConfig | None = None
-    if theme:
-        _BUILTIN_THEMES_DIR = Path(__file__).parent / "assets" / "themes"
-        builtin = _BUILTIN_THEMES_DIR / f"{theme}.sh"
-        theme_path = builtin if builtin.exists() else Path(theme)
-        if not theme_path.exists():
-            raise click.ClickException(f"Theme not found: {theme!r}")
-        tmp_fd, tmp_sc_str = tempfile.mkstemp(suffix=".sc")
-        os.close(tmp_fd)
-        tmp_sc_path = Path(tmp_sc_str)
-        try:
-            do_record(theme_path, tmp_sc_path, config, resolved_shell)
-            theme_base = build_config_from_sc_text(tmp_sc_path.read_text())
-        finally:
-            tmp_sc_path.unlink(missing_ok=True)
-
-    # Build ScriptcastConfig (with embedded ThemeConfig) from .sc, using theme as base
-    if sc_path is not None and sc_path.exists():
-        sc_cfg = build_config_from_sc_text(sc_path.read_text(), base=theme_base)
-    else:
-        sc_cfg = theme_base if theme_base is not None else ScriptcastConfig()
-
-    # Resolve cast file list
+    # Stage 2: generate .cast(s)
     if suffix == ".cast":
         cast_paths = [in_path]
     else:
-        cast_paths = generate_from_sc(sc_path, out_dir, split_scenes=split_scenes, base=theme_base)
+        assert sc_path is not None
+        cast_paths = generate_from_sc(
+            sc_path,
+            out_dir,
+            output_stem=in_path.stem,
+            split_scenes=split_scenes,
+            base=config,
+        )
 
+    if no_export:
+        for p in cast_paths:
+            click.echo(f"Generated: {p}")
+        return
+
+    # Stage 3: export
     for cast_path in cast_paths:
         try:
             export_path = generate_export(
                 cast_path,
-                sc_cfg.theme if sc_cfg.theme.frame else None,
+                config.theme if config.theme.frame else None,
                 format=output_format,
             )
-            if not sc_cfg.theme.frame and sc_cfg.theme.scriptcast_watermark:
-                apply_scriptcast_watermark(export_path, sc_cfg.theme)
+            if not config.theme.frame and config.theme.scriptcast_watermark:
+                apply_scriptcast_watermark(export_path, config.theme)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
         click.echo(f"Generated: {export_path}")

@@ -747,12 +747,13 @@ def _sc_content() -> str:
 
 
 def test_export_command_exists():
+    """The CLI help text describes export capability (no longer a subcommand)."""
     from click.testing import CliRunner
     from scriptcast.__main__ import cli
     runner = CliRunner()
-    result = runner.invoke(cli, ["export", "--help"])
+    result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
-    assert "export" in result.output.lower() or "agg" in result.output.lower()
+    assert "export" in result.output.lower()
 
 
 def test_export_command_default_frame_passes_config(tmp_path):
@@ -770,8 +771,7 @@ def test_export_command_default_frame_passes_config(tmp_path):
     with patch("scriptcast.__main__.generate_from_sc", return_value=[fake_cast]):
         with patch("scriptcast.__main__.generate_export", return_value=fake_gif) as mock_exp:
             with patch("scriptcast.__main__.apply_scriptcast_watermark"):
-                result = runner.invoke(cli, ["export", str(sc_file),
-                                             "--output-dir", str(tmp_path)])
+                result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(sc_file)])
     assert result.exit_code == 0, result.output
     assert isinstance(mock_exp.call_args[0][1], ThemeConfig)
 
@@ -791,8 +791,7 @@ def test_export_command_error_is_clean(tmp_path):
             "scriptcast.__main__.generate_export",
             side_effect=RuntimeError("Pillow not installed"),
         ):
-            result = runner.invoke(cli, ["export", str(sc_file),
-                                         "--output-dir", str(tmp_path)])
+            result = runner.invoke(cli, ["--output-dir", str(tmp_path), str(sc_file)])
     assert result.exit_code == 1
     assert "Pillow not installed" in result.output
 

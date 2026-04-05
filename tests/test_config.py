@@ -297,3 +297,104 @@ def test_apply_set_cr_delay():
     c = ScriptcastConfig()
     c.apply("set", ["cr-delay", "80"])
     assert c.cr_delay == 80
+
+
+# ── extract_config_prefix ─────────────────────────────────────────────────
+
+def test_extract_config_prefix_empty():
+    from scriptcast.config import extract_config_prefix
+    assert extract_config_prefix("") == ""
+
+
+def test_extract_config_prefix_blank_and_comments():
+    from scriptcast.config import extract_config_prefix
+    src = "# comment\n\n# another\n"
+    assert extract_config_prefix(src) == src
+
+
+def test_extract_config_prefix_var_assignment():
+    from scriptcast.config import extract_config_prefix
+    src = "GREEN='\\033[32m'\nRESET='\\033[0m'\n"
+    assert extract_config_prefix(src) == src
+
+
+def test_extract_config_prefix_sc_set():
+    from scriptcast.config import extract_config_prefix
+    src = ": SC set width 80\n: SC set height 24\n"
+    assert extract_config_prefix(src) == src
+
+
+def test_extract_config_prefix_stops_at_scene():
+    from scriptcast.config import extract_config_prefix
+    src = ": SC set width 80\n: SC scene main\necho hi\n"
+    assert extract_config_prefix(src) == ": SC set width 80\n"
+
+
+def test_extract_config_prefix_stops_at_real_command():
+    from scriptcast.config import extract_config_prefix
+    src = ": SC set width 80\necho hello\n"
+    assert extract_config_prefix(src) == ": SC set width 80\n"
+
+
+def test_extract_config_prefix_stops_at_filter():
+    from scriptcast.config import extract_config_prefix
+    src = ": SC set width 80\n: SC filter foo\necho hi\n"
+    assert extract_config_prefix(src) == ": SC set width 80\n"
+
+
+def test_extract_config_prefix_stops_at_type():
+    from scriptcast.config import extract_config_prefix
+    src = ": SC set width 80\n: SC type hello\n"
+    assert extract_config_prefix(src) == ": SC set width 80\n"
+
+
+def test_extract_config_prefix_record_pause_block_collected():
+    from scriptcast.config import extract_config_prefix
+    src = (
+        ": SC record pause\n"
+        "GREEN='\\033[32m'\n"
+        ": SC record resume\n"
+        ": SC set prompt \"${GREEN} > \"\n"
+    )
+    assert extract_config_prefix(src) == src
+
+
+def test_extract_config_prefix_record_pause_real_cmd_inside_collected():
+    """Commands inside a record pause block are still collected (explicitly hidden)."""
+    from scriptcast.config import extract_config_prefix
+    src = (
+        ": SC record pause\n"
+        "some_real_cmd arg\n"
+        ": SC record resume\n"
+        ": SC set width 80\n"
+    )
+    assert extract_config_prefix(src) == src
+
+
+def test_extract_config_prefix_stops_after_record_resume_at_scene():
+    from scriptcast.config import extract_config_prefix
+    src = (
+        ": SC record pause\n"
+        "GREEN='\\033[32m'\n"
+        ": SC record resume\n"
+        ": SC scene main\n"
+        "echo hi\n"
+    )
+    expected = (
+        ": SC record pause\n"
+        "GREEN='\\033[32m'\n"
+        ": SC record resume\n"
+    )
+    assert extract_config_prefix(src) == expected
+
+
+def test_extract_config_prefix_custom_directive_prefix():
+    from scriptcast.config import extract_config_prefix
+    src = ": DEMO set width 80\n: DEMO scene main\necho hi\n"
+    assert extract_config_prefix(src, directive_prefix="DEMO") == ": DEMO set width 80\n"
+
+
+def test_extract_config_prefix_export_var_assignment():
+    from scriptcast.config import extract_config_prefix
+    src = "export FOO=bar\n: SC scene main\n"
+    assert extract_config_prefix(src, directive_prefix="SC") == "export FOO=bar\n"

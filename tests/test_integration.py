@@ -41,10 +41,10 @@ def test_basic_example_end_to_end_split_mode(tmp_path):
 
 
 def test_basic_example_record_stage(tmp_path):
-    """`scriptcast record` on tutorial.sh produces a .sc file with JSONL header."""
+    """scriptcast --no-export on tutorial.sh produces a .sc file with JSONL header."""
     import json as _json
     runner = CliRunner()
-    result = runner.invoke(cli, ["record", str(TUTORIAL_SCRIPT), "--output-dir", str(tmp_path)])
+    result = runner.invoke(cli, ["--output-dir", str(tmp_path), "--no-export", str(TUTORIAL_SCRIPT)])
     assert result.exit_code == 0, result.output
 
     sc_file = tmp_path / "tutorial.sc"

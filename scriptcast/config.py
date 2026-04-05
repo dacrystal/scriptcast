@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import re as _re
 import typing
 from dataclasses import dataclass, field
 
@@ -149,3 +150,53 @@ class ScriptcastConfig:
         """Pause to insert after each space when typing, in seconds."""
         ms = self.word_speed if self.word_speed is not None else self.type_speed
         return ms / 1000.0
+
+
+def extract_config_prefix(sh_text: str, directive_prefix: str = "SC") -> str:
+    """Return the config-safe prefix of a .sh script.
+
+    Collects lines from the top of the script until the first non-config-safe
+    line is encountered. Config-safe lines are:
+      - Blank lines and comments
+      - Variable assignments (FOO=..., export FOO=..., readonly FOO=...)
+      - `: <prefix> set ...` directives
+      - `: <prefix> record pause` ... `: <prefix> record resume` blocks
+
+    Stops at (and excludes) the first line that is any other SC directive
+    (scene, type, expect, filter, sleep, mock, ...) or any real shell command.
+    """
+    dp = _re.escape(directive_prefix)
+    _sc_set = _re.compile(rf"^\s*:\s+{dp}\s+set\b")
+    _sc_rec_pause = _re.compile(rf"^\s*:\s+{dp}\s+record\s+pause\b")
+    _sc_rec_resume = _re.compile(rf"^\s*:\s+{dp}\s+record\s+resume\b")
+    _sc_any = _re.compile(rf"^\s*:\s+{dp}\s+\w+")
+    _var_assign = _re.compile(r"^(export\s+|readonly\s+)?\w+=")
+    _blank_or_comment = _re.compile(r"^\s*(#.*)?$")
+
+    result: list[str] = []
+    in_pause = False
+
+    for raw_line in sh_text.splitlines(keepends=True):
+        line = raw_line.rstrip("\n").rstrip("\r")
+
+        if in_pause:
+            result.append(raw_line)
+            if _sc_rec_resume.match(line):
+                in_pause = False
+            continue
+
+        if _blank_or_comment.match(line):
+            result.append(raw_line)
+        elif _sc_rec_pause.match(line):
+            result.append(raw_line)
+            in_pause = True
+        elif _sc_set.match(line):
+            result.append(raw_line)
+        elif _sc_any.match(line):
+            break   # non-config-safe SC directive
+        elif _var_assign.match(line):
+            result.append(raw_line)
+        else:
+            break   # real shell command
+
+    return "".join(result)
