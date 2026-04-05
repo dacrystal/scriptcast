@@ -5,7 +5,8 @@ from scriptcast.generator import generate_from_sc, generate_from_sc_text
 
 
 def _make_sc(*events, width=80, height=24):
-    header = {"version": 1, "width": width, "height": height, "directive-prefix": "SC"}
+    header = {"version": 1, "width": width, "height": height,
+              "directive-prefix": "SC", "pipeline-version": 2}
     lines = [json.dumps(header)]
     ts = 1.0
     for typ, text in events:
@@ -16,11 +17,11 @@ def _make_sc(*events, width=80, height=24):
 
 def _zero_sc(*events):
     zero = [
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set input_wait 0"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set input_wait 0"),
     ]
     return _make_sc(*zero, *events)
 
@@ -51,17 +52,17 @@ def test_cmd_event_typed_as_output(tmp_path):
 
 
 def test_output_event_in_cast(tmp_path):
-    paths = generate_from_sc_text(_zero_sc(("cmd", "echo hi"), ("output", "hi")), tmp_path)
+    paths = generate_from_sc_text(_zero_sc(("cmd", "echo hi"), ("out", "hi")), tmp_path)
     _, cast = _cast(paths[0])
     assert "hi" in "".join(e[2] for e in cast)
 
 
 def test_exit_wait_at_scene_end(tmp_path):
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set exit_wait 400"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set exit_wait 400"),
         ("cmd", "echo x"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
@@ -69,14 +70,14 @@ def test_exit_wait_at_scene_end(tmp_path):
     assert max(e[0] for e in cast) >= 0.4
 
 
-def test_input_event_advances_cursor(tmp_path):
+def test_expect_input_advances_cursor(tmp_path):
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set input_wait 300"),
-        ("input", "secret"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set input_wait 300"),
+        ("dir", "expect-input secret"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
     _, cast = _cast(paths[0])
@@ -85,12 +86,12 @@ def test_input_event_advances_cursor(tmp_path):
 
 def test_sleep_directive_advances_cursor(tmp_path):
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
         ("cmd", "a"),
-        ("directive", "sleep 500"),
+        ("dir", "sleep 500"),
         ("cmd", "b"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
@@ -100,9 +101,9 @@ def test_sleep_directive_advances_cursor(tmp_path):
 
 def test_scene_split_mode(tmp_path):
     sc = _zero_sc(
-        ("directive", "scene intro"),
+        ("dir", "scene intro"),
         ("cmd", "echo a"),
-        ("directive", "scene outro"),
+        ("dir", "scene outro"),
         ("cmd", "echo b"),
     )
     paths = generate_from_sc_text(sc, tmp_path, split_scenes=True)
@@ -111,9 +112,9 @@ def test_scene_split_mode(tmp_path):
 
 def test_single_cast_default(tmp_path):
     sc = _zero_sc(
-        ("directive", "scene first"),
+        ("dir", "scene first"),
         ("cmd", "echo a"),
-        ("directive", "scene second"),
+        ("dir", "scene second"),
         ("cmd", "echo b"),
     )
     paths = generate_from_sc_text(sc, tmp_path, output_stem="demo")
@@ -123,13 +124,13 @@ def test_single_cast_default(tmp_path):
 
 def test_single_cast_timestamps_continuous(tmp_path):
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set exit_wait 200"),
-        ("directive", "scene a"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set exit_wait 200"),
+        ("dir", "scene a"),
         ("cmd", "x"),
-        ("directive", "scene b"),
+        ("dir", "scene b"),
         ("cmd", "y"),
     )
     paths = generate_from_sc_text(sc, tmp_path, output_stem="out")
@@ -153,11 +154,11 @@ def test_generate_from_sc_reads_file(tmp_path):
 def test_word_speed_adds_pause_between_words(tmp_path):
     # "echo hello world" has 2 spaces → 2 word pauses of 200ms each = 400ms
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set word_speed 200"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set word_speed 200"),
         ("cmd", "echo hello world"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
@@ -169,10 +170,10 @@ def test_word_speed_none_mirrors_type_speed(tmp_path):
     # word_speed=None → word pause = type_speed (100ms here); "a b" has 1 space
     # chars: 'a' at 0.1, ' ' at 0.2 + word_pause 0.1 = 0.3, 'b' at 0.4, '\r\n' at 0.5
     sc = _make_sc(
-        ("directive", "set type_speed 100"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
+        ("dir", "set type_speed 100"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
         ("cmd", "a b"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
@@ -180,16 +181,16 @@ def test_word_speed_none_mirrors_type_speed(tmp_path):
     assert max(e[0] for e in cast) >= 0.5
 
 
-def test_word_speed_applies_to_input_events(tmp_path):
+def test_word_speed_applies_to_expect_input(tmp_path):
     # "foo bar" has 1 space → 1 word pause of 300ms
     sc = _make_sc(
-        ("directive", "set type_speed 0"),
-        ("directive", "set cmd_wait 0"),
-        ("directive", "set exit_wait 0"),
-        ("directive", "set enter_wait 0"),
-        ("directive", "set input_wait 0"),
-        ("directive", "set word_speed 300"),
-        ("input", "foo bar"),
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set input_wait 0"),
+        ("dir", "set word_speed 300"),
+        ("dir", "expect-input foo bar"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
     _, cast = _cast(paths[0])
@@ -200,8 +201,8 @@ def test_quoted_prompt_in_pre_scene_set(tmp_path):
     # bash traces `"$ "` as `'$ '`; shlex.split must handle shell quoting in the
     # pre-scene directive loop so the cast shows "$ " not "'$"
     sc = _make_sc(
-        ("directive", "set prompt '$ '"),
-        ("directive", "scene main"),
+        ("dir", "set prompt '$ '"),
+        ("dir", "scene main"),
         ("cmd", "echo hi"),
     )
     paths = generate_from_sc_text(sc, tmp_path)
@@ -227,9 +228,9 @@ def test_build_config_from_sc_text_applies_pre_scene_set():
     import json
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
-        json.dumps([0.0, "directive", "set type_speed 20"]),
-        json.dumps([0.1, "directive", "set theme-radius 16"]),
-        json.dumps([0.2, "directive", "scene main"]),
+        json.dumps([0.0, "dir", "set type_speed 20"]),
+        json.dumps([0.1, "dir", "set theme-radius 16"]),
+        json.dumps([0.2, "dir", "scene main"]),
         json.dumps([0.3, "cmd", "echo hello"]),
     ]
     sc = header + "\n" + "\n".join(events)
@@ -243,8 +244,8 @@ def test_build_config_from_sc_text_stops_at_scene():
     import json
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
-        json.dumps([0.0, "directive", "scene main"]),
-        json.dumps([0.1, "directive", "set type_speed 99"]),
+        json.dumps([0.0, "dir", "scene main"]),
+        json.dumps([0.1, "dir", "set type_speed 99"]),
     ]
     sc = header + "\n" + "\n".join(events)
     cfg = build_config_from_sc_text(sc)
@@ -279,7 +280,7 @@ def test_build_config_from_sc_text_sc_overrides_base():
     import json
     base = ScriptcastConfig(prompt="THEME_PROMPT")
     header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
-    events = [json.dumps([0.0, "directive", "set prompt SC_PROMPT"])]
+    events = [json.dumps([0.0, "dir", "set prompt SC_PROMPT"])]
     sc = header + "\n" + "\n".join(events)
     cfg = build_config_from_sc_text(sc, base=base)
     assert cfg.prompt == "SC_PROMPT"
@@ -300,7 +301,7 @@ def test_generate_from_sc_text_base_prompt_in_cast(tmp_path):
     from scriptcast.config import ScriptcastConfig
     base = ScriptcastConfig(prompt="THEME>")
     sc = _zero_sc(
-        ("directive", "scene main"),
+        ("dir", "scene main"),
         ("cmd", "echo hi"),
     )
     paths = generate_from_sc_text(sc, tmp_path, base=base)
@@ -313,8 +314,8 @@ def test_generate_from_sc_text_sc_prompt_overrides_base(tmp_path):
     from scriptcast.config import ScriptcastConfig
     base = ScriptcastConfig(prompt="THEME>")
     sc = _zero_sc(
-        ("directive", "set prompt SCRIPT>"),
-        ("directive", "scene main"),
+        ("dir", "set prompt SCRIPT>"),
+        ("dir", "scene main"),
         ("cmd", "echo hi"),
     )
     paths = generate_from_sc_text(sc, tmp_path, base=base)
@@ -337,7 +338,7 @@ def test_generate_from_sc_text_base_type_speed(tmp_path):
 def test_generate_from_sc_reads_file_with_base(tmp_path):
     from scriptcast.config import ScriptcastConfig
     base = ScriptcastConfig(prompt="FILE>")
-    sc = _zero_sc(("directive", "scene main"), ("cmd", "echo hi"))
+    sc = _zero_sc(("dir", "scene main"), ("cmd", "echo hi"))
     sc_file = tmp_path / "demo.sc"
     sc_file.write_text(sc)
     out = tmp_path / "out"
@@ -346,3 +347,33 @@ def test_generate_from_sc_reads_file_with_base(tmp_path):
     _, cast = _cast(paths[0])
     prompt_text = "".join(e[2] for e in cast)
     assert "FILE>" in prompt_text
+
+
+def test_expect_input_directive_advances_cursor(tmp_path):
+    sc = _make_sc(
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set input_wait 300"),
+        ("dir", "expect-input secret"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    assert max(e[0] for e in cast) >= 0.3
+
+
+def test_expect_input_directive_emits_chars(tmp_path):
+    sc = _make_sc(
+        ("dir", "set type_speed 0"),
+        ("dir", "set cmd_wait 0"),
+        ("dir", "set exit_wait 0"),
+        ("dir", "set enter_wait 0"),
+        ("dir", "set input_wait 0"),
+        ("dir", "expect-input hi"),
+    )
+    paths = generate_from_sc_text(sc, tmp_path)
+    _, cast = _cast(paths[0])
+    all_text = "".join(e[2] for e in cast)
+    assert "h" in all_text
+    assert "i" in all_text

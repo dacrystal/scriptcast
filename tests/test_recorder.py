@@ -5,7 +5,8 @@ import shutil
 import pytest
 
 from scriptcast.config import ScriptcastConfig
-from scriptcast.recorder import _postprocess, _preprocess, record
+from scriptcast.directives import ScEvent
+from scriptcast.recorder import _parse_raw, _serialise, _postprocess, _preprocess, record
 
 
 def test_record_creates_sc_file(tmp_path):
@@ -30,6 +31,7 @@ def test_sc_file_has_jsonl_header(tmp_path):
     assert header["directive-prefix"] == "SC"
     assert "width" in header
     assert "height" in header
+    assert header["pipeline-version"] == 2
 
 
 def test_sc_file_contains_output_event(tmp_path):
@@ -38,7 +40,7 @@ def test_sc_file_contains_output_event(tmp_path):
     sc_path = tmp_path / "demo.sc"
     record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
     events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
-    assert any(e[1] == "output" and "scriptcast_test_marker" in e[2] for e in events)
+    assert any(e[1] == "out" and "scriptcast_test_marker" in e[2] for e in events)
 
 
 def test_record_nonzero_exit_writes_sc_and_warns(tmp_path):
@@ -159,13 +161,13 @@ def test_postprocess_emits_cmd_event():
 def test_postprocess_emits_output_event():
     raw = "1.000 hello\n"
     events = _parse_sc_events(_postprocess(raw))
-    assert any(e[1] == "output" and e[2] == "hello" for e in events)
+    assert any(e[1] == "out" and e[2] == "hello" for e in events)
 
 
 def test_postprocess_emits_generator_directive():
     raw = "1.000 + : SC scene intro\n"
     events = _parse_sc_events(_postprocess(raw))
-    assert any(e[1] == "directive" and e[2] == "scene intro" for e in events)
+    assert any(e[1] == "dir" and e[2] == "scene intro" for e in events)
 
 
 def test_postprocess_strips_mock_marker_and_set_x():
@@ -180,7 +182,7 @@ def test_postprocess_strips_mock_marker_and_set_x():
     assert not any("mark mock" in t for t in texts)
     assert not any("set +x" in t for t in texts)
     assert any(e[1] == "cmd" and "deploy arg1" in e[2] for e in events)
-    assert any(e[1] == "output" and "Deploying..." in e[2] for e in events)
+    assert any(e[1] == "out" and "Deploying..." in e[2] for e in events)
 
 
 def test_postprocess_strips_expect_trace():
@@ -188,7 +190,7 @@ def test_postprocess_strips_expect_trace():
     events = _parse_sc_events(_postprocess(raw))
     assert not any(e[1] == "cmd" and e[2] == "expect" for e in events)
     assert not any("spawn" in e[2] for e in events)
-    assert any(e[1] == "output" and "Password:" in e[2] for e in events)
+    assert any(e[1] == "out" and "Password:" in e[2] for e in events)
 
 
 def test_postprocess_strips_expect_trace_with_args():
@@ -216,7 +218,7 @@ def test_postprocess_filter_applies_to_output():
         "1.001 foo baz\n"
     )
     events = _parse_sc_events(_postprocess(raw))
-    output_texts = [e[2] for e in events if e[1] == "output"]
+    output_texts = [e[2] for e in events if e[1] == "out"]
     assert any("bar baz" in t for t in output_texts)
     assert not any("foo" in t for t in output_texts)
 
@@ -224,7 +226,7 @@ def test_postprocess_filter_applies_to_output():
 def test_postprocess_filter_not_emitted_as_directive():
     raw = "1.000 + : SC filter sed 's/a/b/g'\n"
     events = _parse_sc_events(_postprocess(raw))
-    assert not any(e[1] == "directive" and "filter" in e[2] for e in events)
+    assert not any(e[1] == "dir" and "filter" in e[2] for e in events)
 
 
 def test_postprocess_filter_add_appends():
@@ -234,43 +236,8 @@ def test_postprocess_filter_add_appends():
         "1.002 foo baz\n"
     )
     events = _parse_sc_events(_postprocess(raw))
-    output_texts = [e[2] for e in events if e[1] == "output"]
+    output_texts = [e[2] for e in events if e[1] == "out"]
     assert any("bar qux" in t for t in output_texts)
-
-
-def test_postprocess_emits_input_event_for_mark_input():
-    raw = (
-        "1.000 + expect myapp\n"
-        "1.001 spawn myapp\n"
-        "1.002 : SC mark input secret\n"
-    )
-    events = _parse_sc_events(_postprocess(raw))
-    assert any(e[1] == "input" for e in events)
-
-
-def test_postprocess_emits_output_prefix_before_input():
-    raw = (
-        "1.000 + expect myapp\n"
-        "1.001 spawn myapp\n"
-        "1.002 Password: : SC mark input secret\n"
-    )
-    events = _parse_sc_events(_postprocess(raw))
-    types = [e[1] for e in events]
-    assert "output" in types and "input" in types
-    assert types.index("output") < types.index("input")
-
-
-def test_postprocess_mark_input_empty_prefix_stays_in_session():
-    """Mark input line with empty output prefix must not escape the expect session."""
-    raw = (
-        "1.000 + : SC mark expect ./myapp\n"
-        "1.001 spawn ./myapp\n"
-        "1.002 : SC mark input secret\n"
-        "1.003 + echo after\n"
-    )
-    events = _parse_sc_events(_postprocess(raw))
-    assert any(e[1] == "input" for e in events)
-    assert any(e[1] == "cmd" and "echo after" in e[2] for e in events)
 
 
 def test_postprocess_custom_trace_prefix():
@@ -279,18 +246,27 @@ def test_postprocess_custom_trace_prefix():
     assert any(e[1] == "cmd" and e[2] == "echo hi" for e in events)
 
 
-def test_postprocess_emits_cmd_for_spawn_after_expect_trace():
+def test_postprocess_emits_expect_input_dir_event():
     raw = (
-        "1.000 + expect\n"
-        "1.001 spawn ./fake-db\n"
+        "1.000 + expect myapp\n"
+        "1.001 spawn myapp\n"
+        "1.002 : SC mark input secret\n"
+    )
+    events = _parse_sc_events(_postprocess(raw))
+    assert any(e[1] == "dir" and "expect-input" in e[2] for e in events)
+
+
+def test_postprocess_emits_output_prefix_before_expect_input():
+    raw = (
+        "1.000 + expect myapp\n"
+        "1.001 spawn myapp\n"
         "1.002 Password: : SC mark input secret\n"
     )
     events = _parse_sc_events(_postprocess(raw))
-    texts = [e[2] for e in events]
-    assert not any("spawn" in t for t in texts)
-    assert any(e[1] == "cmd" and e[2] == "./fake-db" for e in events)
-    # No pty echo follows, so input is silent (empty string)
-    assert any(e[1] == "input" and e[2] == "" for e in events)
+    types = [e[1] for e in events]
+    assert "out" in types
+    assert any(e[1] == "dir" and "expect-input" in e[2] for e in events)
+    assert types.index("out") < types.index("dir")
 
 
 def test_postprocess_strips_pty_echo_after_input():
@@ -305,7 +281,7 @@ def test_postprocess_strips_pty_echo_after_input():
         "1.007 (0 rows)\n"
     )
     events = _parse_sc_events(_postprocess(raw))
-    output_texts = [e[2] for e in events if e[1] == "output"]
+    output_texts = [e[2] for e in events if e[1] == "out"]
     assert "secret" not in output_texts
     assert "show databases;" not in output_texts
     assert "Welcome to FakeDB" in output_texts
@@ -319,7 +295,7 @@ def test_record_mock_directive_produces_cmd_and_output_events(tmp_path):
     record(script, sc_path, ScriptcastConfig(), shutil.which("bash"))
     events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
     assert any(e[1] == "cmd" and "deploy" in e[2] for e in events)
-    assert any(e[1] == "output" and "Deploying..." in e[2] for e in events)
+    assert any(e[1] == "out" and "Deploying..." in e[2] for e in events)
     assert not any("mark mock" in e[2] for e in events)
     assert not any("set +x" in e[2] for e in events)
 
@@ -355,7 +331,7 @@ def test_postprocess_decodes_hex_escape_in_sc_directive():
     # bash re-quotes "\x1b[92m❯ \x1b[0m" to '\x1b[92m❯ \x1b[0m' in xtrace
     raw = "1.000 + : SC set prompt '\\x1b[92m> \\x1b[0m'\n"
     events = _parse_sc_events(_postprocess(raw))
-    directive = next(e for e in events if e[1] == "directive")
+    directive = next(e for e in events if e[1] == "dir")
     assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
     assert "\\x1b" not in directive[2]
 
@@ -364,7 +340,7 @@ def test_postprocess_decodes_octal_escape_in_sc_directive():
     # bash re-quotes "\033[92m❯ \033[0m" to '\033[92m❯ \033[0m' in xtrace
     raw = "1.000 + : SC set prompt '\\033[92m> \\033[0m'\n"
     events = _parse_sc_events(_postprocess(raw))
-    directive = next(e for e in events if e[1] == "directive")
+    directive = next(e for e in events if e[1] == "dir")
     assert "\x1b" in directive[2], "expected real ESC byte, got: " + repr(directive[2])
     assert "\\033" not in directive[2]
 
@@ -378,3 +354,55 @@ def test_postprocess_does_not_decode_escapes_in_cmd_events():
     cmd = next(e for e in events if e[1] == "cmd")
     assert "\\x1b" in cmd[2], "literal \\x1b should be preserved in cmd events"
     assert "\x1b" not in cmd[2], "real ESC bytes must not appear in cmd events"
+
+
+def test_parse_raw_cmd_line():
+    events = _parse_raw("1.000 + echo hello\n", "+", "SC")
+    assert events == [ScEvent(1.0, "cmd", "echo hello")]
+
+
+def test_parse_raw_output_line():
+    events = _parse_raw("1.000 hello world\n", "+", "SC")
+    assert events == [ScEvent(1.0, "out", "hello world")]
+
+
+def test_parse_raw_directive_line():
+    events = _parse_raw("1.000 + : SC scene intro\n", "+", "SC")
+    assert events == [ScEvent(1.0, "dir", "scene intro")]
+
+
+def test_parse_raw_skips_non_float_lines():
+    events = _parse_raw("not_a_number + echo hi\n", "+", "SC")
+    assert events == []
+
+
+def test_parse_raw_decodes_escapes_in_dir_events():
+    events = _parse_raw("1.000 + : SC set prompt \\x24 \n", "+", "SC")
+    assert events == [ScEvent(1.0, "dir", "set prompt $ ")]
+
+
+def test_parse_raw_custom_prefix():
+    events = _parse_raw("1.000 ++ echo hi\n", "++", "SC")
+    assert events == [ScEvent(1.0, "cmd", "echo hi")]
+
+
+def test_serialise_cmd():
+    events = [ScEvent(1.0, "cmd", "echo hi")]
+    lines = _serialise(events).splitlines()
+    assert json.loads(lines[0]) == [1.0, "cmd", "echo hi"]
+
+
+def test_serialise_out():
+    events = [ScEvent(1.0, "out", "hello")]
+    lines = _serialise(events).splitlines()
+    assert json.loads(lines[0]) == [1.0, "out", "hello"]
+
+
+def test_serialise_dir():
+    events = [ScEvent(1.0, "dir", "scene intro")]
+    lines = _serialise(events).splitlines()
+    assert json.loads(lines[0]) == [1.0, "dir", "scene intro"]
+
+
+def test_serialise_empty():
+    assert _serialise([]) == ""

@@ -5,10 +5,20 @@ import re
 import shlex
 import subprocess
 from collections import deque
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .config import ScriptcastConfig
+
+EventType = Literal["cmd", "out", "dir"]
+
+
+@dataclass(frozen=True)
+class ScEvent:
+    ts: float
+    type: EventType
+    text: str
 
 
 class Directive:
@@ -19,22 +29,21 @@ class Directive:
         self.dp = dp
         self.tp = tp
 
-    def pre(self, queue: deque[str]) -> list[str] | None:
+    def pre(self, lines: list[str]) -> list[str]:
         """Pre-phase: rewrite script lines before shell execution.
 
-        Peek queue[0]; consume lines and return replacement lines, or return
-        None if this directive does not match the current line.
+        Receive the full list of script lines, return a transformed list.
+        Lines not recognised by this directive must be passed through unchanged.
         """
-        return None
+        return lines
 
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        """Post-phase: transform raw xtrace lines into JSONL .sc events.
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        """Post-phase: transform ScEvents.
 
-        Peek queue[0]; consume lines and return JSONL strings, or return
-        None if this directive does not match the current line.
-        Return [] to consume lines without emitting output.
+        Receive the full list, return a transformed list.
+        Events not recognised by this directive must be passed through unchanged.
         """
-        return None
+        return events
 
     def gen(
         self,
@@ -43,12 +52,7 @@ class Directive:
         active: ScriptcastConfig,
         cursor: float,
     ) -> tuple[float, list[str]]:
-        """Gen-phase: emit cast lines for a directive event.
-
-        Called when a 'directive' event is found in the .sc file and this
-        directive's `handles` matches the directive name. Return updated
-        cursor and list of JSON cast lines.
-        """
+        """Gen-phase: emit cast lines for a directive event."""
         return cursor, []
 
 
@@ -61,42 +65,54 @@ class MockDirective(Directive):
             rf"^:\s+{re.escape(dp)}\s+mock\s+(.+?)\s*<<(['\"]?)(\w+)\2\s*$"
         )
 
-    def pre(self, queue: deque[str]) -> list[str] | None:
-        m = self._mock_re.match(queue[0].rstrip("\n\r"))
-        if not m:
-            return None
-        queue.popleft()
-        cmd_args = m.group(1).strip()
-        quote = m.group(2)
-        delim = m.group(3)
-        body: list[str] = []
-        while queue and queue[0].rstrip("\n\r") != delim:
-            body.append(queue.popleft())
-        closing = queue.popleft() if queue else delim + "\n"
-        return [
-            f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<{quote}{delim}{quote}\n",
-            *body,
-            closing,
-        ]
+    def pre(self, lines: list[str]) -> list[str]:
+        out: list[str] = []
+        i = 0
+        while i < len(lines):
+            m = self._mock_re.match(lines[i].rstrip("\n\r"))
+            if not m:
+                out.append(lines[i])
+                i += 1
+                continue
+            cmd_args = m.group(1).strip()
+            quote = m.group(2)
+            delim = m.group(3)
+            i += 1
+            body: list[str] = []
+            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
+                body.append(lines[i])
+                i += 1
+            closing = lines[i] if i < len(lines) else delim + "\n"
+            i += 1
+            out.extend([
+                f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<{quote}{delim}{quote}\n",
+                *body,
+                closing,
+            ])
+        return out
 
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-        if content != f"{self.tp} : {self.dp} mark mock":
-            return None
-        queue.popleft()
-        if queue:
-            queue.popleft()  # drop set +x
-        return []
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        out: list[ScEvent] = []
+        i = 0
+        while i < len(events):
+            e = events[i]
+            if e.type == "dir" and e.text == "mark mock":
+                i += 1
+                # drop following "set +x" cmd event if present
+                if i < len(events) and events[i].type == "cmd" and events[i].text == "set +x":
+                    i += 1
+            else:
+                out.append(e)
+                i += 1
+        return out
 
 
 class ExpectDirective(Directive):
     priority = 30
+    handles = "expect-input"
 
-    def __init__(
-        self, dp: str = "SC", tp: str = "+", filter_d: FilterDirective | None = None
-    ):
+    def __init__(self, dp: str = "SC", tp: str = "+"):
         super().__init__(dp, tp)
-        self._filter_d = filter_d
         self._expect_re = re.compile(
             rf"^:\s+{re.escape(dp)}\s+expect\s+(.+?)\s*<<(['\"]?)(\w+)\2\s*$"
         )
@@ -105,125 +121,133 @@ class ExpectDirective(Directive):
             rf"(.*?): {re.escape(dp)} mark input\s*(.*)$"
         )
 
-    def _apply_filter(self, text: str) -> str:
-        return self._filter_d.apply(text) if self._filter_d else text
-
-    def pre(self, queue: deque[str]) -> list[str] | None:
-        m = self._expect_re.match(queue[0].rstrip("\n\r"))
-        if not m:
-            return None
-        queue.popleft()
-        cmd_args = m.group(1).strip()
-        delim = m.group(3)
-        body: list[str] = []
-        while queue and queue[0].rstrip("\n\r") != delim:
-            body.append(queue.popleft())
-        closing = queue.popleft() if queue else delim + "\n"
-        new_body: list[str] = [f"spawn {cmd_args}\n"]
-        for bl in body:
-            sm = self._send_re.match(bl.rstrip("\n\r"))
-            if sm:
-                input_text = sm.group(2)
-                if input_text.endswith("\\r"):
-                    input_text = input_text[:-2]
-                new_body.append(
-                    f'send_user ": {self.dp} mark input {input_text}\\n"\n'
-                )
-            elif re.match(r"^\s*send\s+", bl):
-                new_body.append(f'send_user ": {self.dp} mark input\\n"\n')
-            new_body.append(bl)
-        return [
-            f": {self.dp} mark expect {cmd_args}\n",
-            f"expect <<'{delim}'\n",
-            *new_body,
-            closing,
-        ]
-
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-
-        # Absorb bare "+ expect" trace line (raw expect call, not via SC expect directive)
-        if content == f"{self.tp} expect" or content.startswith(f"{self.tp} expect "):
-            queue.popleft()
-            if not queue:
-                return []
-            _, spawn_content = queue.popleft()
-            if not spawn_content.startswith("spawn "):
-                return []
-            cmd = spawn_content[len("spawn "):]
-            events: list[str] = [json.dumps([ts, "cmd", cmd])]
-            while queue:
-                line_ts, rest = queue[0]
-                # mark input FIRST — before the termination check.
-                # Lines like ": SC mark input text" (empty output prefix) would otherwise
-                # match the ": SC ..." termination check and escape the session.
-                mi = self._mark_input_re.match(rest)
-                if mi:
-                    queue.popleft()
-                    self._consume_mark_input(queue, events, line_ts, mi)
-                    continue
-                if rest.startswith(f"{self.tp} "):
-                    return events
-                queue.popleft()
-                events.append(json.dumps([line_ts, "output", self._apply_filter(rest)]))
-            return events
-
-        prefix_str = f"{self.tp} : {self.dp} mark expect "
-        if not content.startswith(prefix_str):
-            return None
-        queue.popleft()
-        cmd = content[len(prefix_str):].strip()
-
-        events = []
-        events.append(json.dumps([ts, "cmd", cmd]))
-
-        while queue:
-            line_ts, rest = queue[0]
-
-            mi = self._mark_input_re.match(rest)
-            if mi:
-                queue.popleft()
-                self._consume_mark_input(queue, events, line_ts, mi)
+    def pre(self, lines: list[str]) -> list[str]:
+        out: list[str] = []
+        i = 0
+        while i < len(lines):
+            m = self._expect_re.match(lines[i].rstrip("\n\r"))
+            if not m:
+                out.append(lines[i])
+                i += 1
                 continue
+            cmd_args = m.group(1).strip()
+            delim = m.group(3)
+            i += 1
+            body: list[str] = []
+            while i < len(lines) and lines[i].rstrip("\n\r") != delim:
+                body.append(lines[i])
+                i += 1
+            closing = lines[i] if i < len(lines) else delim + "\n"
+            i += 1
+            new_body: list[str] = [f"spawn {cmd_args}\n"]
+            for bl in body:
+                sm = self._send_re.match(bl.rstrip("\n\r"))
+                if sm:
+                    input_text = sm.group(2)
+                    if input_text.endswith("\\r"):
+                        input_text = input_text[:-2]
+                    new_body.append(
+                        f'send_user ": {self.dp} mark input {input_text}\\n"\n'
+                    )
+                elif re.match(r"^\s*send\s+", bl):
+                    new_body.append(f'send_user ": {self.dp} mark input\\n"\n')
+                new_body.append(bl)
+            out.extend([
+                f": {self.dp} mark expect {cmd_args}\n",
+                f"expect <<'{delim}'\n",
+                *new_body,
+                closing,
+            ])
+        return out
 
-            # "+ expect" trace within session — skip
-            if rest == f"{self.tp} expect" or rest.startswith(f"{self.tp} expect "):
-                queue.popleft()
-                continue
-
-            # Outer shell resumed — leave line in queue and stop
-            if rest.startswith(f"{self.tp} ") or rest.startswith(f": {self.dp} "):
-                return events
-
-            queue.popleft()
-            if rest.startswith("spawn "):
-                continue
-            events.append(json.dumps([line_ts, "output", self._apply_filter(rest)]))
-
-        return events
-
-    def _consume_mark_input(
-        self,
-        queue: deque[tuple[float, str]],
-        events: list[str],
-        line_ts: float,
-        mi: re.Match[str],
-    ) -> None:
-        prefix_out = mi.group(1)
-        input_text = mi.group(2).strip()
-        if prefix_out.strip():
-            events.append(json.dumps([line_ts, "output", self._apply_filter(prefix_out)]))
-        if queue:
-            next_ts, next_rest = queue[0]
-            if next_rest.rstrip("\r") == input_text:
-                queue.popleft()
-                events.append(json.dumps([line_ts, "input", input_text]))
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        out: list[ScEvent] = []
+        i = 0
+        while i < len(events):
+            e = events[i]
+            # Pattern 1: SC expect directive marker
+            if e.type == "dir" and e.text.startswith("mark expect "):
+                cmd = e.text[len("mark expect "):].strip()
+                out.append(ScEvent(e.ts, "cmd", cmd))
+                i += 1
+                i, session_events = self._consume_session(events, i)
+                out.extend(session_events)
+            # Pattern 2: raw expect call (not via SC expect directive)
+            elif e.type == "cmd" and (e.text == "expect" or e.text.startswith("expect ")):
+                i += 1
+                if i < len(events) and events[i].type == "out" and events[i].text.startswith("spawn "):
+                    cmd = events[i].text[len("spawn "):]
+                    out.append(ScEvent(e.ts, "cmd", cmd))
+                    i += 1
+                i, session_events = self._consume_session(events, i)
+                out.extend(session_events)
             else:
-                events.append(json.dumps([line_ts, "input", ""]))
-                if not next_rest.rstrip("\r"):
-                    queue.popleft()
-        else:
-            events.append(json.dumps([line_ts, "input", ""]))
+                out.append(e)
+                i += 1
+        return out
+
+    def gen(
+        self,
+        event: tuple,
+        queue: deque[tuple],
+        active: ScriptcastConfig,
+        cursor: float,
+    ) -> tuple[float, list[str]]:
+        _, _, text = event
+        # text is "expect-input <input_text>" or just "expect-input"
+        parts = text.split(maxsplit=1)
+        input_text = parts[1] if len(parts) > 1 else ""
+        lines: list[str] = []
+        cursor += active.input_wait / 1000.0
+        for char in input_text:
+            cursor += active.type_speed / 1000.0
+            lines.append(json.dumps([round(cursor, 6), "o", char]))
+            if char == " ":
+                cursor += active.effective_word_pause_s
+        lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
+        return cursor, lines
+
+    def _consume_session(
+        self, events: list[ScEvent], i: int
+    ) -> tuple[int, list[ScEvent]]:
+        session: list[ScEvent] = []
+        while i < len(events):
+            e = events[i]
+            # Terminator: outer shell cmd or SC directive
+            if e.type == "cmd":
+                # Inner expect calls within the session — skip
+                if e.text == "expect" or e.text.startswith("expect "):
+                    i += 1
+                    continue
+                break
+            if e.type == "dir":
+                break
+            # Check for mark input pattern in out events
+            mi = self._mark_input_re.match(e.text)
+            if mi:
+                prefix_out = mi.group(1)
+                input_text = mi.group(2).strip()
+                if prefix_out.strip():
+                    session.append(ScEvent(e.ts, "out", prefix_out))
+                i += 1
+                # Check for PTY echo on next line
+                if i < len(events) and events[i].type == "out":
+                    next_e = events[i]
+                    if next_e.text.rstrip("\r") == input_text:
+                        i += 1  # strip PTY echo
+                        session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
+                    else:
+                        session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
+                else:
+                    session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
+                continue
+            # Skip spawn line
+            if e.text.startswith("spawn "):
+                i += 1
+                continue
+            session.append(ScEvent(e.ts, "out", e.text))
+            i += 1
+        return i, session
 
 
 class FilterDirective(Directive):
@@ -233,35 +257,24 @@ class FilterDirective(Directive):
         super().__init__(dp, tp)
         self._filters: list[list[str]] = []
 
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-        sc_filter = f"{self.tp} : {self.dp} filter "
-        sc_filter_add = f"{self.tp} : {self.dp} filter-add "
-        if content.startswith(sc_filter):
-            name, rest = "filter", content[len(sc_filter):]
-        elif content.startswith(sc_filter_add):
-            name, rest = "filter-add", content[len(sc_filter_add):]
-        else:
-            trace_pfx = f"{self.tp} "
-            sc_pfx = f"{self.tp} : {self.dp} "
-            if content.startswith(sc_pfx):
-                pass  # SC directive line — don't filter
-            elif content.startswith(trace_pfx):
-                # Trace/cmd line: filter the command portion after the trace prefix
-                cmd = content[len(trace_pfx):]
-                queue[0] = (ts, trace_pfx + self.apply(cmd))
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        out: list[ScEvent] = []
+        for e in events:
+            if e.type == "dir" and e.text.startswith("filter "):
+                argv = shlex.split(e.text[len("filter "):])
+                if argv:
+                    self._filters = [argv]
+                # consumed — not emitted
+            elif e.type == "dir" and e.text.startswith("filter-add "):
+                argv = shlex.split(e.text[len("filter-add "):])
+                if argv:
+                    self._filters.append(argv)
+                # consumed — not emitted
+            elif e.type in ("out", "cmd"):
+                out.append(ScEvent(e.ts, e.type, self.apply(e.text)))
             else:
-                queue[0] = (ts, self.apply(content))
-            return None
-        queue.popleft()
-        argv = shlex.split(rest)
-        if not argv:
-            return []
-        if name == "filter":
-            self._filters = [argv]
-        else:
-            self._filters.append(argv)
-        return []
+                out.append(e)
+        return out
 
     def apply(self, text: str) -> str:
         for argv in self._filters:
@@ -276,53 +289,51 @@ class FilterDirective(Directive):
 class RecordDirective(Directive):
     priority = 10
 
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-        if content != f"{self.tp} : {self.dp} record pause":
-            return None
-        queue.popleft()
-        while queue:
-            _, c = queue.popleft()
-            if c == f"{self.tp} : {self.dp} record resume":
-                break
-        return []
-
-
-class ScDirective(Directive):
-    priority = 99  # catch-all — must run last
-
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-        prefix = f"{self.tp} : {self.dp} "
-        if not content.startswith(prefix):
-            return None
-        queue.popleft()
-        rest = content[len(prefix):].strip()
-        if rest:
-            return [json.dumps([ts, "directive", rest])]
-        return []
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        out: list[ScEvent] = []
+        i = 0
+        while i < len(events):
+            e = events[i]
+            if e.type == "dir" and e.text == "record pause":
+                i += 1
+                while i < len(events):
+                    if events[i].type == "dir" and events[i].text == "record resume":
+                        i += 1
+                        break
+                    i += 1
+            else:
+                out.append(e)
+                i += 1
+        return out
 
 
 class CommentDirective(Directive):
-    """Matches `: SC '\\' comment` trace lines and emits [ts, "cmd", "# comment"].
+    """Converts `: SC '\\' comment` directive events to cmd events with # comment.
 
     Script syntax: `: SC '\\' This is a comment`
-    Bash traces as: `+ : SC '\\' This is a comment`
+    After _parse_raw strips the prefix, dir event text is: `'\\' This is a comment`
+    Emits: `ScEvent(ts, "cmd", "# This is a comment")`
     """
-    priority = 45  # must precede ScDirective (catch-all)
+    priority = 45
 
-    def post(self, queue: deque[tuple[float, str]]) -> list[str] | None:
-        ts, content = queue[0]
-        prefix = f"{self.tp} : {self.dp} '\\' "
-        bare = f"{self.tp} : {self.dp} '\\'"
-        if content.startswith(prefix):
-            rest = content[len(prefix):]
-            queue.popleft()
-            return [json.dumps([ts, "cmd", f"# {rest}"])]
-        if content == bare:
-            queue.popleft()
-            return [json.dumps([ts, "cmd", "#"])]
-        return None
+    def post(self, events: list[ScEvent]) -> list[ScEvent]:
+        """Convert comment directive events to cmd events."""
+        out: list[ScEvent] = []
+        for e in events:
+            if e.type == "dir":
+                # After _parse_raw strips "+ : SC ", the dir event text is the literal string
+                prefix = "'\\' "
+                bare = "'\\\'"
+                if e.text.startswith(prefix):
+                    rest = e.text[len(prefix):]
+                    out.append(ScEvent(e.ts, "cmd", f"# {rest}"))
+                elif e.text == bare:
+                    out.append(ScEvent(e.ts, "cmd", "#"))
+                else:
+                    out.append(e)
+            else:
+                out.append(e)
+        return out
 
 
 class SetDirective(Directive):

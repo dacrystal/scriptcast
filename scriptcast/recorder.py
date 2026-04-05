@@ -8,10 +8,10 @@ import subprocess
 import tempfile
 import time
 import warnings
-from collections import deque
 from pathlib import Path
 
 from .config import ScriptcastConfig
+from .directives import ScEvent
 from .registry import build_directives
 from .shell import get_adapter
 
@@ -33,20 +33,52 @@ def _decode_bash_escapes(text: str) -> str:
     return text
 
 
-def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
-    """Rewrite SC mock/expect directives to executable shell before recording."""
-    directives = build_directives(directive_prefix)
-    queue: deque[str] = deque(script_text.splitlines(keepends=True))
-    out: list[str] = []
-    while queue:
-        for d in directives:
-            result = d.pre(queue)
-            if result is not None:
-                out.extend(result)
-                break
+def _parse_raw(
+    raw_text: str,
+    trace_prefix: str = "+",
+    directive_prefix: str = "SC",
+) -> list[ScEvent]:
+    """Parse raw xtrace log text into an initial list of ScEvents.
+
+    Classification rules (applied per line):
+      "+ : SC <rest>"  →  ScEvent(ts, "dir",  decode_escapes(rest))
+      "+ <cmd>"        →  ScEvent(ts, "cmd",  cmd)
+      "<text>"         →  ScEvent(ts, "out",  text)
+    Lines with non-float timestamps are skipped.
+    """
+    sc_prefix = f"{trace_prefix} : {directive_prefix} "
+    trace_prefix_sp = f"{trace_prefix} "
+    events: list[ScEvent] = []
+    for raw in raw_text.splitlines():
+        ts_str, _, content = raw.partition(" ")
+        try:
+            ts = float(ts_str)
+        except ValueError:
+            continue
+        content = content.rstrip("\n\r")
+        if content.startswith(sc_prefix):
+            rest = _decode_bash_escapes(content[len(sc_prefix):])
+            events.append(ScEvent(ts, "dir", rest))
+        elif content.startswith(trace_prefix_sp):
+            events.append(ScEvent(ts, "cmd", content[len(trace_prefix_sp):]))
         else:
-            out.append(queue.popleft())
-    return "".join(out)
+            events.append(ScEvent(ts, "out", content))
+    return events
+
+
+def _serialise(events: list[ScEvent]) -> str:
+    """Convert a list of ScEvents to JSONL text (no trailing newline if empty)."""
+    lines = [json.dumps([e.ts, e.type, e.text]) for e in events]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def _preprocess(script_text: str, directive_prefix: str = "SC") -> str:
+    """Rewrite script lines using directive pre-phase before shell execution."""
+    directives = build_directives(directive_prefix)
+    lines = script_text.splitlines(keepends=True)
+    for d in directives:
+        lines = d.pre(lines)
+    return "".join(lines)
 
 
 def _postprocess(
@@ -55,39 +87,11 @@ def _postprocess(
     directive_prefix: str = "SC",
 ) -> str:
     """Convert raw .log text to JSONL .sc body (no header line)."""
-    tp = trace_prefix
-    trace_marker = f"{tp} "
-
-    queue: deque[tuple[float, str]] = deque()
-    for raw in raw_text.splitlines():
-        ts_str, _, content = raw.partition(" ")
-        try:
-            ts_val = float(ts_str)
-        except ValueError:
-            continue
-        content = content.rstrip("\n\r")
-        sc_directive_prefix = f"{tp} : {directive_prefix} "
-        if content.startswith(sc_directive_prefix):
-            content = _decode_bash_escapes(content)
-        queue.append((ts_val, content))
-
     directives = build_directives(directive_prefix, trace_prefix)
-    out: list[str] = []
-
-    while queue:
-        for d in directives:
-            result = d.post(queue)
-            if result is not None:
-                out.extend(result)
-                break
-        else:
-            ts, content = queue.popleft()
-            if content.startswith(trace_marker):
-                out.append(json.dumps([ts, "cmd", content[len(trace_marker):]]))
-            else:
-                out.append(json.dumps([ts, "output", content]))
-
-    return "\n".join(out) + ("\n" if out else "")
+    events = _parse_raw(raw_text, trace_prefix, directive_prefix)
+    for d in directives:
+        events = d.post(events)
+    return _serialise(events)
 
 
 def record(
@@ -143,6 +147,7 @@ def record(
             "width": config.width,
             "height": config.height,
             "directive-prefix": config.directive_prefix,
+            "pipeline-version": 2,
         })
         sc_path.write_text(header + "\n" + clean_text)
 

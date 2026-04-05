@@ -56,7 +56,7 @@ def build_config_from_sc_text(
         if not isinstance(row, list) or len(row) < 3:
             continue
         _, typ, text = row[0], row[1], row[2]
-        if typ != "directive":
+        if typ != "dir":
             continue
         parts = shlex.split(str(text))
         if not parts:
@@ -106,6 +106,9 @@ def generate_from_sc_text(
         return []
 
     header = json.loads(lines[0])
+    pipeline_version = header.get("pipeline-version", 1)
+    if pipeline_version not in (1, 2):
+        raise ValueError(f"Unsupported .sc pipeline-version: {pipeline_version}")
     if base is not None:
         config = base.copy()
         config.directive_prefix = header.get("directive-prefix", config.directive_prefix)
@@ -132,8 +135,10 @@ def generate_from_sc_text(
 
     # Apply pre-scene set directives to base config
     for _, typ, text in events:
-        if typ == "directive":
+        if typ == "dir":
             parts = shlex.split(text)
+            if not parts:
+                continue
             if parts[0] == "scene":
                 break
             if parts[0] == "set" and len(parts) >= 3:
@@ -174,7 +179,7 @@ def _split_scenes(events: list[tuple]) -> list[tuple[str, list[tuple]]]:
 
     for event in events:
         _, typ, text = event
-        if typ == "directive" and text.split()[0] == "scene":
+        if typ == "dir" and text.split()[0] == "scene":
             if current_name is not None:
                 scenes.append((current_name, current_events))
             parts = text.split(maxsplit=1)
@@ -188,10 +193,18 @@ def _split_scenes(events: list[tuple]) -> list[tuple[str, list[tuple]]]:
     if current_name is not None:
         scenes.append((current_name, current_events))
 
+    _overhead = {"set"}
+
+    def _is_overhead_only(evts: list[tuple]) -> bool:
+        return all(
+            typ == "dir" and text.split()[0] in _overhead
+            for _, typ, text in evts
+        )
+
     return [
         (name, evts)
         for name, evts in scenes
-        if not (name == "main" and all(typ == "directive" for _, typ, _ in evts))
+        if not (name == "main" and _is_overhead_only(evts))
     ]
 
 
@@ -233,7 +246,7 @@ def _render_scene_lines(
         event = queue.popleft()
         _, typ, text = event
 
-        if typ == "directive":
+        if typ == "dir":
             parts = text.split()
             name = parts[0] if parts else ""
             d = gen_registry.get(name)
@@ -252,20 +265,13 @@ def _render_scene_lines(
             cursor += active.type_speed / 1000.0
             lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
-        elif typ == "output":
+        elif typ == "out":
+            # Suppress \r\n when the next event is expect-input — the input adds its own
             next_typ = queue[0][1] if queue else None
-            suffix = "" if next_typ == "input" else "\r\n"
+            next_text = queue[0][2] if queue else ""
+            is_before_input = next_typ == "dir" and next_text.startswith("expect-input")
+            suffix = "" if is_before_input else "\r\n"
             lines.append(json.dumps([round(cursor, 6), "o", text + suffix]))
-
-        elif typ == "input":
-            # Always add \r\n after input (Enter was pressed, visible or silent)
-            cursor += active.input_wait / 1000.0
-            for char in text:
-                cursor += active.type_speed / 1000.0
-                lines.append(json.dumps([round(cursor, 6), "o", char]))
-                if char == " ":
-                    cursor += active.effective_word_pause_s
-            lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
 
     lines.append(json.dumps([round(cursor, 6), "o", active.prompt]))
     cursor += active.exit_wait / 1000.0

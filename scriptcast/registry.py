@@ -11,32 +11,20 @@ from .directives import (
     FilterDirective,
     MockDirective,
     RecordDirective,
-    ScDirective,
+    ScEvent,
     SetDirective,
     SleepDirective,
 )
 
 
 def build_directives(dp: str = "SC", tp: str = "+") -> list[Directive]:
-    """Build the full sorted directive list for the given prefix settings.
-
-    Core directives are always included. Third-party directives registered
-    under the 'scriptcast.directives' entry-point group are appended and
-    sorted into the list by their priority attribute.
-
-    The cross-directive dependency (ExpectDirective needs FilterDirective.apply
-    to filter output lines captured inside expect sessions) is wired here.
-    """
-    filter_d = FilterDirective(dp, tp)
-    expect_d = ExpectDirective(dp, tp, filter_d=filter_d)
-
+    """Build the full sorted directive list for the given prefix settings."""
     core: list[Directive] = [
         RecordDirective(dp, tp),
         MockDirective(dp, tp),
-        expect_d,
-        filter_d,
+        ExpectDirective(dp, tp),
+        FilterDirective(dp, tp),
         CommentDirective(dp, tp),
-        ScDirective(dp, tp),
         SetDirective(dp, tp),
         SleepDirective(dp, tp),
     ]

@@ -172,9 +172,9 @@ def test_sc_file_with_theme_directives_builds_theme_config():
     from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
-        json.dumps([0.0, "directive", "set theme-background ff0000,0000ff"]),
-        json.dumps([0.1, "directive", "set theme-radius 16"]),
-        json.dumps([0.2, "directive", "set terminal-theme light"]),
+        json.dumps([0.0, "dir", "set theme-background ff0000,0000ff"]),
+        json.dumps([0.1, "dir", "set theme-radius 16"]),
+        json.dumps([0.2, "dir", "set terminal-theme light"]),
     ]
     sc = header + "\n" + "\n".join(events)
     cfg = build_config_from_sc_text(sc)
@@ -187,8 +187,8 @@ def test_sc_file_theme_and_script_config():
     from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
-        json.dumps([0.0, "directive", "set type_speed 30"]),
-        json.dumps([0.1, "directive", "set theme-frame false"]),
+        json.dumps([0.0, "dir", "set type_speed 30"]),
+        json.dumps([0.1, "dir", "set theme-frame false"]),
     ]
     sc = header + "\n" + "\n".join(events)
     cfg = build_config_from_sc_text(sc)
@@ -199,7 +199,7 @@ def test_sc_file_theme_and_script_config():
 def test_sc_file_multi_value_padding():
     from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
-    sc = header + "\n" + json.dumps([0.0, "directive", "set theme-padding 14 0 0 0"])
+    sc = header + "\n" + json.dumps([0.0, "dir", "set theme-padding 14 0 0 0"])
     cfg = build_config_from_sc_text(sc)
     assert cfg.theme.padding_top == 14
     assert cfg.theme.padding_right == 0
