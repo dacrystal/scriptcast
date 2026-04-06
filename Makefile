@@ -1,4 +1,5 @@
-.PHONY: lint typecheck test changelog all install-tools
+.PHONY: lint typecheck test all install-tools \
+        changelog changelog-preview changelog-bump release
 
 # ── CI / quality ────────────────────────────────────────────────────────────
 
@@ -11,10 +12,32 @@ typecheck:
 test:
 	pytest --cov=scriptcast --cov-report=term-missing
 
-changelog:
-	git cliff --unreleased --tag HEAD -o CHANGELOG.md
-
 all: lint typecheck test
+
+# ── Changelog / release ──────────────────────────────────────────────────────
+
+# Preview what the next changelog entry will look like (dry-run, no files changed)
+changelog-preview:
+	git cliff --unreleased --bump
+
+# Show what the next version number will be
+changelog-bump:
+	git cliff --bumped-version
+
+# Prepend new entries to CHANGELOG.md for the next release
+changelog:
+	git cliff --prepend --bump
+	@echo "CHANGELOG.md updated. Review, then run: make release"
+
+# Full release: update changelog, commit, tag, push
+release:
+	$(eval VERSION := $(shell git cliff --bumped-version))
+	git cliff --prepend --bump
+	git add CHANGELOG.md
+	git commit -m "chore: release $(VERSION)"
+	git tag $(VERSION)
+	git push origin main --tags
+	@echo "Released $(VERSION)"
 
 # ── Dev tooling: agg binary + JetBrains Mono font ───────────────────────────
 
