@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
 
 [project]
 name = "scriptcast"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Generate terminal demos (asciinema casts & GIFs) from simple shell-like scripts."
+readme = "README.md"
 requires-python = ">=3.10"
 authors = [
     {name = "Nasser Alansari", email = "dacrystal@users.noreply.github.com"},
@@ -23,6 +25,11 @@ dependencies = [
     "pillow>=9.0",
 ]
 
+[project.urls]
+"Homepage" = "https://dacrystal.github.io/scriptcast"
+"Source Code" = "https://github.com/dacrystal/scriptcast"
+"Issues" = "https://github.com/dacrystal/scriptcast/issues"
+
 [project.scripts]
 scriptcast = "scriptcast.__main__:cli"
 
@@ -36,11 +43,11 @@ dev = [
     "git-cliff>=2.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
+[tool.hatch.version]
+source = "vcs"
 
-[tool.setuptools.package-data]
-scriptcast = ["assets/**/*"]
+[tool.hatch.build.targets.wheel]
+packages = ["scriptcast"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
