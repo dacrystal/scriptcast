@@ -41,6 +41,7 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
     "git-cliff>=2.0",
+    "hatch-vcs>=0.4",
 ]
 
 [tool.hatch.version]
