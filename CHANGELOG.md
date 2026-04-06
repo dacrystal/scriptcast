@@ -1,3 +1,9 @@
+## [0.2.0] - 2026-04-06
+
+### Added
+
+- Add --version, ASCII banner, hatch-fancy-pypi-readme, and GitHub Pages workflow
+
 ## [0.1.0] - 2026-04-06
 
 ### Added
