@@ -9,6 +9,7 @@ from scriptcast.directives import (
     Directive,
     ExpectDirective,
     FilterDirective,
+    HelpersDirective,
     MockDirective,
     RecordDirective,
     ScEvent,
@@ -239,6 +240,32 @@ def test_expect_directive_post_strips_pty_echo():
     assert "(0 rows)" in out_texts
 
 
+def test_expect_directive_post_preserves_cr_lf_from_pty_echo():
+    # When the PTY echo includes a trailing \r\n (Enter echo), it must be kept
+    # as an out event so the cast shows a newline after the typed input.
+    # Bug scenario: "Email: dev@example.comPassword:" (no newline between them).
+    d = ExpectDirective()
+    events = [
+        ScEvent(1.0, "dir", "mark expect app"),
+        ScEvent(1.001, "cmd", "expect"),
+        ScEvent(1.002, "out", "spawn app"),
+        ScEvent(1.003, "out", "Email: : SC mark input dev@example.com"),
+        ScEvent(1.004, "out", "dev@example.com\r\n"),  # PTY echo with Enter
+        ScEvent(1.005, "out", "Password: "),
+        ScEvent(1.006, "cmd", "echo done"),
+    ]
+    result = d.post(events)
+    out_texts = [e.text for e in result if e.type == "out"]
+    # Characters stripped; \r\n retained so the cast shows a newline after typing
+    assert "dev@example.com\r\n" not in out_texts  # full echo gone
+    assert "\r\n" in out_texts                     # but the Enter echo preserved
+    assert "Password: " in out_texts
+    # \r\n must appear before "Password: " in the output
+    rn_idx = next(i for i, t in enumerate(out_texts) if t == "\r\n")
+    pw_idx = next(i for i, t in enumerate(out_texts) if t == "Password: ")
+    assert rn_idx < pw_idx
+
+
 def test_expect_directive_post_handles_raw_expect_call():
     """Bare 'cmd: expect' event (no SC expect directive) is handled correctly."""
     d = ExpectDirective()
@@ -337,6 +364,14 @@ def test_filter_directive_apply_real_command():
     d = FilterDirective()
     d.post([ScEvent(1.0, "dir", "filter tr 'a-z' 'A-Z'")])
     assert d.apply("hello") == "HELLO"
+
+
+def test_filter_directive_apply_preserves_cr_in_content():
+    # text=True in subprocess would convert \r → \n via universal newlines;
+    # binary mode must be used so progress-bar \r overwrite chars survive the filter.
+    d = FilterDirective()
+    d.post([ScEvent(1.0, "dir", "filter sed 's/x/x/g'")])  # identity filter
+    assert d.apply("frame1\rframe2\rframe3\r\n") == "frame1\rframe2\rframe3\r\n"
 
 
 def test_filter_directive_failed_command_returns_empty():
@@ -499,7 +534,7 @@ def test_expect_directive_gen_emits_chars():
     cast_texts = [json.loads(ln)[2] for ln in lines]
     assert "h" in cast_texts
     assert "i" in cast_texts
-    assert "\r\n" in cast_texts
+    assert "\r\n" not in cast_texts
     event_types = {json.loads(ln)[1] for ln in lines}
     assert event_types == {"o"}
 
@@ -512,6 +547,56 @@ def test_expect_directive_gen_empty_input():
     active.input_wait = 0
     active.type_speed = 0
     cursor, lines = d.gen((1.0, "dir", "expect-input"), deque(), active, 0.0)
-    # only \r\n emitted
-    cast_texts = [json.loads(ln)[2] for ln in lines]
-    assert cast_texts == ["\r\n"]
+    assert lines == []
+
+
+def test_helpers_directive_priority_is_lowest():
+    from scriptcast.directives import build_directives
+    all_directives = build_directives()
+    helpers = next(d for d in all_directives if isinstance(d, HelpersDirective))
+    others = [d for d in all_directives if not isinstance(d, HelpersDirective)]
+    assert all(helpers.priority < d.priority for d in others)
+
+
+def test_helpers_directive_pre_passthrough():
+    d = HelpersDirective()
+    lines = ["echo hello\n", "exit 0\n"]
+    assert d.pre(lines) == lines
+
+
+def test_helpers_directive_pre_expands_helpers_line():
+    d = HelpersDirective()
+    lines = [": SC helpers\n", "echo hi\n"]
+    result = d.pre(lines)
+    joined = "".join(result)
+    assert ": SC record pause\n" in joined
+    assert "RED=$'\\033[31m'\n" in joined
+    assert "YELLOW=$'\\033[33m'\n" in joined
+    assert "GREEN=$'\\033[32m'\n" in joined
+    assert "CYAN=$'\\033[36m'\n" in joined
+    assert "BOLD=$'\\033[1m'\n" in joined
+    assert "RESET=$'\\033[0m'\n" in joined
+    assert ": SC record resume\n" in joined
+    assert "echo hi\n" in joined
+    assert ": SC helpers\n" not in joined
+
+
+def test_helpers_directive_pre_custom_prefix():
+    d = HelpersDirective(dp="MY")
+    lines = [": MY helpers\n"]
+    result = d.pre(lines)
+    joined = "".join(result)
+    assert ": MY record pause\n" in joined
+    assert ": MY record resume\n" in joined
+
+
+def test_helpers_directive_pre_ignores_partial_match():
+    d = HelpersDirective()
+    lines = [": SC helpers extra\n"]
+    assert d.pre(lines) == lines
+
+
+def test_helpers_directive_post_passthrough():
+    d = HelpersDirective()
+    events = [ScEvent(1.0, "cmd", "echo hi")]
+    assert d.post(events) == events

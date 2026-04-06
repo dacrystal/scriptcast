@@ -213,7 +213,6 @@ class ExpectDirective(Directive):
             lines.append(json.dumps([round(cursor, 6), "o", char]))
             if char == " ":
                 cursor += active.effective_word_pause_s
-        lines.append(json.dumps([round(cursor, 6), "o", "\r\n"]))
         return cursor, lines
 
     def _consume_session(
@@ -243,8 +242,13 @@ class ExpectDirective(Directive):
                 if i < len(events) and events[i].type == "out":
                     next_e = events[i]
                     if next_e.text.rstrip("\r\n") == input_text:
-                        i += 1  # strip PTY echo
+                        # Strip the echoed characters; keep the trailing \r\n
+                        # (Enter echo) so the cast shows a newline after typing.
+                        remaining = next_e.text[len(input_text):]
+                        i += 1
                         session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
+                        if remaining:
+                            session.append(ScEvent(next_e.ts, "out", remaining))
                     else:
                         session.append(ScEvent(e.ts, "dir", f"expect-input {input_text}"))
                 else:
@@ -297,8 +301,8 @@ class FilterDirective(Directive):
             term, body = '', text
         for argv in self._filters:
             try:
-                result = subprocess.run(argv, input=body, capture_output=True, text=True)
-                body = result.stdout.rstrip('\n')
+                result = subprocess.run(argv, input=body.encode(), capture_output=True)
+                body = result.stdout.decode('utf-8', errors='replace').rstrip('\n')
             except OSError:
                 body = ''
         return body + term
@@ -322,6 +326,32 @@ class RecordDirective(Directive):
             else:
                 out.append(e)
                 i += 1
+        return out
+
+
+class HelpersDirective(Directive):
+    priority = 5
+
+    def __init__(self, dp: str = "SC", tp: str = "+"):
+        super().__init__(dp, tp)
+        self._helpers_re = re.compile(rf"^:\s+{re.escape(dp)}\s+helpers\s*$")
+
+    def pre(self, lines: list[str]) -> list[str]:
+        out: list[str] = []
+        for line in lines:
+            if self._helpers_re.match(line.rstrip("\n\r")):
+                out.extend([
+                    f": {self.dp} record pause\n",
+                    "RED=$'\\033[31m'\n",
+                    "YELLOW=$'\\033[33m'\n",
+                    "GREEN=$'\\033[32m'\n",
+                    "CYAN=$'\\033[36m'\n",
+                    "BOLD=$'\\033[1m'\n",
+                    "RESET=$'\\033[0m'\n",
+                    f": {self.dp} record resume\n",
+                ])
+            else:
+                out.append(line)
         return out
 
 
@@ -387,6 +417,7 @@ def build_directives(dp: str = "SC", tp: str = "+") -> list[Directive]:
     """Build the full sorted directive list for the given prefix settings."""
     core: list[Directive] = [
         RecordDirective(dp, tp),
+        HelpersDirective(dp, tp),
         MockDirective(dp, tp),
         ExpectDirective(dp, tp),
         FilterDirective(dp, tp),

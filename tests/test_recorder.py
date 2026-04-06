@@ -333,6 +333,12 @@ def test_parse_raw_cmd_line():
     assert events == [ScEvent(1.0, "cmd", "echo hello")]
 
 
+def test_parse_raw_cmd_strips_trailing_cr():
+    # PTY CRLF: \r before \n is a PTY artifact and must be stripped from cmd text.
+    events = _parse_raw("1.000 + echo hello\r\n", "+", "SC")
+    assert events == [ScEvent(1.0, "cmd", "echo hello")]
+
+
 def test_parse_raw_output_line():
     events = _parse_raw("1.000 hello world\n", "+", "SC")
     assert events == [ScEvent(1.0, "out", "hello world\n")]
@@ -340,6 +346,12 @@ def test_parse_raw_output_line():
 
 def test_parse_raw_directive_line():
     events = _parse_raw("1.000 + : SC scene intro\n", "+", "SC")
+    assert events == [ScEvent(1.0, "dir", "scene intro")]
+
+
+def test_parse_raw_dir_strips_trailing_cr():
+    # PTY CRLF: \r before \n is a PTY artifact and must be stripped from dir text.
+    events = _parse_raw("1.000 + : SC scene intro\r\n", "+", "SC")
     assert events == [ScEvent(1.0, "dir", "scene intro")]
 
 
@@ -377,11 +389,11 @@ def test_serialise_empty():
 
 
 def test_parse_raw_out_preserves_cr_in_content():
-    # The custom pipe reader emits one record per terminator, so a bare \r and
-    # the following \n produce two separate raw-log entries, each with its own
-    # timestamp.  _parse_raw must therefore yield two out events.
-    events = _parse_raw("1.000 Loading\r1.001 Done\n", "+", "SC")
-    assert events == [ScEvent(1.0, "out", "Loading\r"), ScEvent(1.001, "out", "Done\n")]
+    # With the simplified split-on-\n approach, bare \r is content, not a
+    # record separator. A line containing bare \r yields a single out event
+    # with the \r embedded in the text.
+    events = _parse_raw("1.000 Loading\r100%\n", "+", "SC")
+    assert events == [ScEvent(1.0, "out", "Loading\r100%\n")]
 
 
 def test_parse_raw_out_preserves_crlf():
@@ -416,3 +428,4 @@ def test_record_pty_translates_lf_to_crlf(tmp_path):
     events = [json.loads(ln) for ln in sc_path.read_text().splitlines()[1:] if ln.strip()]
     out_texts = [e[2] for e in events if e[1] == "out"]
     assert any("hello\r\n" in t for t in out_texts)
+

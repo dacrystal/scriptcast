@@ -168,7 +168,7 @@ def test_word_speed_adds_pause_between_words(tmp_path):
 
 def test_word_speed_none_mirrors_type_speed(tmp_path):
     # word_speed=None → word pause = type_speed (100ms here); "a b" has 1 space
-    # chars: 'a' at 0.1, ' ' at 0.2 + word_pause 0.1 = 0.3, 'b' at 0.4, '\r\n' at 0.5
+    # chars: 'a' at 0.1, ' ' at 0.2 + word_pause 0.1 = 0.3, 'b' at 0.4, prompt/sentinel at 0.5
     sc = _make_sc(
         ("dir", "set type_speed 100"),
         ("dir", "set cmd_wait 0"),
