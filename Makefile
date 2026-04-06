@@ -36,7 +36,7 @@ release:
 	$(eval VERSION := $(shell git cliff --bumped-version 2>/dev/null))
 	git add CHANGELOG.md
 	@git commit -m "chore: release $(VERSION)" || { echo "Error: CHANGELOG.md unchanged. Run 'make changelog' first."; exit 1; }
-	git tag v$(VERSION)
+	git tag $(VERSION)
 	git push origin main
-	git push origin v$(VERSION)
+	git push origin $(VERSION)
 	@echo "Released $(VERSION)"
