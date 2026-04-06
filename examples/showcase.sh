@@ -9,13 +9,8 @@
 : SC set input_wait 300
 : SC set theme dark
 
-# ANSI color helpers — hidden from cast via record pause
-: SC record pause
-GREEN=$'\033[32m'
-CYAN=$'\033[36m'
-BOLD=$'\033[1m'
-RESET=$'\033[0m'
-: SC record resume
+# ANSI color helpers
+: SC helpers
 
 # ── Scene 1: login ────────────────────────────
 # SC expect drives an interactive process via expect(1).
