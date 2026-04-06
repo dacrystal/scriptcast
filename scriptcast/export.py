@@ -10,6 +10,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from PIL.Image import Dither
+from PIL.ImageFont import FreeTypeFont
+from PIL.ImageFont import ImageFont as _PILFont
 
 from .config import ThemeConfig
 
@@ -196,7 +198,7 @@ def _preprocess_frames(
     return padded, terminal_bg
 
 
-def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):
+def _draw_gradient_circle(img, cx, cy, radius, base_color, highlight_color):  # type: ignore[no-untyped-def]
     base = _hex_rgba(base_color)
     highlight = _hex_rgba(highlight_color)
 
@@ -269,6 +271,7 @@ def _build_chrome(
                                       _LIGHT_RADIUS, base_color, highlight_color)
 
         if config.frame_bar_title:
+            title_font: FreeTypeFont | _PILFont
             try:
                 title_font = ImageFont.truetype(str(_DM_SANS), size=12)
             except Exception:
@@ -321,6 +324,7 @@ def _apply_watermark(base: Image.Image, config: ThemeConfig, margin_bottom: int 
         else int(max(20, min(30, base.width * 0.11)))
     )
 
+    font: FreeTypeFont | _PILFont
     try:
         font = ImageFont.truetype(str(_DM_SANS), size=font_size)
     except Exception:
@@ -353,18 +357,19 @@ def _apply_scriptcast_watermark(base: Image.Image, config: ThemeConfig) -> Image
     draw = ImageDraw.Draw(result)
 
     font_size = 14
+    wm_font: FreeTypeFont | _PILFont
     try:
-        font = ImageFont.truetype(str(_PACIFICO), size=font_size)
+        wm_font = ImageFont.truetype(str(_PACIFICO), size=font_size)
     except (OSError, AttributeError):
         try:
-            font = ImageFont.load_default(size=font_size)
+            wm_font = ImageFont.load_default(size=font_size)
         except TypeError:
-            font = ImageFont.load_default()
+            wm_font = ImageFont.load_default()
 
     x = base.width - 8
     y = base.height - 8
-    draw.text((x + 1, y + 1), _WATERMARK_TEXT, fill=(0, 0, 0, 160), font=font, anchor="rb")
-    draw.text((x, y), _WATERMARK_TEXT, fill=(255, 255, 255, 220), font=font, anchor="rb")
+    draw.text((x + 1, y + 1), _WATERMARK_TEXT, fill=(0, 0, 0, 160), font=wm_font, anchor="rb")
+    draw.text((x, y), _WATERMARK_TEXT, fill=(255, 255, 255, 220), font=wm_font, anchor="rb")
     return result
 
 

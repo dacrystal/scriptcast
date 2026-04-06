@@ -10,6 +10,7 @@ import tempfile
 import urllib.request
 import zipfile as _zipfile
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -238,6 +239,7 @@ def cli(
     if suffix == ".cast":
         cast_paths = [in_path]
     else:
+        assert sc_path is not None
         logger.info("Generating .cast ...")
         cast_paths = generate_from_sc(
             sc_path,
@@ -255,18 +257,19 @@ def cli(
     # Stage 3: export
     logger.info("Exporting to %s ...", output_format.upper())
     for cast_path in cast_paths:
-        _bar: list = [None]
+        _bar: list[Any] = [None]
 
         def on_frame(current: int, total: int) -> None:
             if _bar[0] is None:
-                _bar[0] = click.progressbar(
+                pb = click.progressbar(
                     length=total,
                     label=f"{output_format.upper()}   ",
                     width=0,
                     show_eta=True,
                     file=sys.stderr,
                 )
-                _bar[0].__enter__()
+                pb.__enter__()
+                _bar[0] = pb
             _bar[0].update(1)
 
         try:
