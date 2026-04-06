@@ -7,7 +7,6 @@
 : SC set cmd_wait 300
 : SC set exit_wait 800
 : SC set input_wait 300
-: SC set theme dark
 
 # ANSI color helpers
 : SC helpers
@@ -17,6 +16,7 @@
 # Inputs typed by send appear as animated keystrokes in the cast.
 : SC scene login
 
+: SC filter sed "s#./fake-myapp#myapp#g"
 : SC expect ./fake-myapp <<'EOF'
 expect "Email:"
 send "dev@example.com\r"

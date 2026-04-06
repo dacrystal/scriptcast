@@ -1,5 +1,7 @@
 # scriptcast
 
+![scriptcast demo](assets/demo.png)
+
 [![Standard Readme](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
 [![PyPI version](https://img.shields.io/pypi/v/scriptcast.svg)](https://pypi.org/project/scriptcast/)
 [![Tests](https://github.com/dacrystal/scriptcast/actions/workflows/tests.yml/badge.svg)](https://github.com/dacrystal/scriptcast/actions)
@@ -10,15 +12,12 @@ scriptcast turns a shell script into a reproducible, polished terminal demo — 
 typing animations, multiple scenes, mocked commands, interactive sessions, output
 filtering, and more.
 
-## Demo
-
-![scriptcast demo](examples/demo.png)
-
 ## Table of Contents
 
 - [Background](#background)
 - [Install](#install)
 - [Usage](#usage)
+- [Examples](#examples)
 - [Script Syntax](#script-syntax)
 - [Contributing](#contributing)
 - [License](#license)
@@ -60,17 +59,13 @@ pip install -e .
 ## Usage
 
 ```bash
-# End-to-end: record script and generate .cast file(s)
-scriptcast demo.sh
+scriptcast demo.sh          # record → generate → export (PNG by default)
+scriptcast demo.sc          # generate → export (skip record)
+scriptcast demo.cast        # export only
 
-# Stage 1 — record to .sc file
-scriptcast record demo.sh
-
-# Stage 2 — generate .cast file(s) from a recorded .sc
-scriptcast generate demo.sc
-
-# Generate GIFs from a .sc file (requires agg)
-scriptcast gif demo.sc
+scriptcast --no-export demo.sh   # record + generate only, no image
+scriptcast --format gif demo.sh  # export as GIF (requires agg)
+scriptcast install               # install agg binary and fonts
 ```
 
 Key flags:
@@ -78,10 +73,32 @@ Key flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--output-dir PATH` | same dir as input | Where to write output files |
+| `--no-export` | off | Stop after generating `.cast`; skip image export |
+| `--format [gif\|png]` | `png` | Export format |
+| `--theme TEXT` | `dark` | Built-in theme name or path to `.sh` theme file |
 | `--directive-prefix PREFIX` | `SC` | Directive prefix used in scripts |
 | `--trace-prefix CHAR` | `+` | PS4/xtrace prefix |
-| `--title` / `--no-title` | off | Show scene name at the start of each cast |
 | `--shell PATH` | `$SHELL` | Shell used for recording |
+| `--split-scenes` | off | Write one `.cast` file per scene |
+| `--xtrace-log` | off | Save raw xtrace capture to `<stem>.xtrace` |
+
+## Examples
+
+**`examples/showcase.sh`** — a realistic three-scene demo: interactive login, mocked deploy, status check with filter.
+
+![showcase](assets/showcase-aurora.png)
+
+**`examples/tutorial.sh`** — one scene per directive: mock, expect, filter, comment, sleep, word\_speed, record pause/resume.
+
+![tutorial](assets/tutorial.png)
+
+### Themes
+
+Built-in themes: `dark` (default), `aurora`, `light`. Pass `--theme <name>` or a path to a custom `.sh` theme file.
+
+| `--theme dark` | `--theme aurora` | `--theme light` |
+|:---:|:---:|:---:|
+| ![dark](assets/showcase-dark.png) | ![aurora](assets/showcase-aurora.png) | ![light](assets/showcase-light.png) |
 
 ## Script Syntax
 
@@ -161,6 +178,7 @@ These are consumed during recording and never appear in the `.sc` file.
 | `SC filter <cmd> [args...]` | Replace the current output filter with a shell command (stdin→stdout) |
 | `SC filter-add <cmd> [args...]` | Append a command to the current filter chain |
 | `SC '\' <text>` | Emit a `# text` comment line in the cast (visual annotation) |
+| `SC helpers` | Inject ANSI color variables (`RED`, `YELLOW`, `GREEN`, `CYAN`, `BOLD`, `RESET`) silently into the script |
 
 #### `SC expect` syntax
 
@@ -200,7 +218,15 @@ These are stored in the `.sc` file and interpreted during cast generation.
 | `width` | `100` | Terminal width (columns) |
 | `height` | `28` | Terminal height (rows) |
 | `prompt` | `$ ` | Prompt string shown before commands |
-| `theme` | `dark` | Terminal colour theme |
+| `word_speed` | same as `type_speed` | Extra ms pause after each space when typing |
+| `cr_delay` | `0` | ms between `\r`-split segments (for progress-bar animations) |
+
+When using ANSI escape sequences in `prompt`, use ANSI-C quoting so the shell
+interprets the escapes before scriptcast sees them:
+
+```sh
+: SC set prompt $'\033[92m> \033[0m'
+```
 
 ## Contributing
 

@@ -8,7 +8,6 @@
 : SC set exit_wait 800
 : SC set input_wait 300
 : SC set enter_wait 100
-: SC set theme dark
 : SC helpers
 
 # ── Scene: intro ──────────────────────────────
@@ -82,6 +81,15 @@ echo "All 42 tests passed."
 echo "Compiling..."
 : SC sleep 800
 echo "Done in 1.2s."
+
+# ── Scene: word_speed ─────────────────────────
+# SC set word_speed adds an extra pause after each space,
+# making commands appear to be typed more deliberately.
+# Default is the same as type_speed (no extra gap).
+: SC scene word_speed
+
+: SC set word_speed 120
+echo "This line types with a longer pause between each word."
 
 # ── Scene: record ─────────────────────────────
 # SC record pause stops capturing. Commands still execute,
