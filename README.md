@@ -19,6 +19,7 @@ filtering, and more.
 - [Usage](#usage)
 - [Examples](#examples)
 - [Script Syntax](#script-syntax)
+- [Similar Projects](#similar-projects)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -227,6 +228,21 @@ interprets the escapes before scriptcast sees them:
 ```sh
 : SC set prompt $'\033[92m> \033[0m'
 ```
+
+## Similar Projects
+
+- [VHS](https://github.com/charmbracelet/vhs) — declarative `.tape` DSL for scripted terminal recordings; outputs GIF, MP4, WebM
+- [Terminalizer](https://github.com/faressoft/terminalizer) — record a live terminal session and render it as a GIF or HTML player
+- [asciinema_automation](https://github.com/PierreMarchand20/asciinema_automation) — automate asciinema recordings using pexpect and comment directives
+- [demo-magic](https://github.com/paxtonhare/demo-magic) — bash function library for simulated typing in live terminal presentations
+
+**What makes scriptcast different:**
+
+- **Shell-script-native** — the demo source is a real, runnable `.sh` file, not a DSL or config format. Directives are no-op shell comments that execute harmlessly.
+- **Two-stage pipeline** — `record` and `generate` are separate. Re-rendering with different timing or themes is instant, no re-recording needed.
+- **Version-controllable** — the `.sc` file is plain JSONL, diffable and reviewable in git.
+- **Mocking and expect** — `SC mock` and `SC expect` let you script slow, side-effectful, or interactive commands without running the real thing.
+- **Output filters** — `SC filter` pipes captured output through any shell command to scrub paths, tokens, or hostnames before they reach the cast.
 
 ## Contributing
 
