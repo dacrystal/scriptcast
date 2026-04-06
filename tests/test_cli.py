@@ -1,11 +1,15 @@
 # tests/test_cli.py
 import json
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from scriptcast.__main__ import cli
+
+requires_agg = pytest.mark.skipif(shutil.which("agg") is None, reason="agg not installed")
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -72,6 +76,7 @@ def test_cast_input_with_no_export_errors(tmp_path):
 
 # ── .sh input (full pipeline) ──────────────────────────────────────────────
 
+@requires_agg
 def test_sh_input_end_to_end(tmp_path):
     """scriptcast demo.sh records, generates, exports."""
     script = _sh(tmp_path)
@@ -90,6 +95,7 @@ def test_sh_input_no_export_produces_cast(tmp_path):
     assert (tmp_path / "demo.cast").exists()
 
 
+@requires_agg
 def test_sh_input_split_scenes(tmp_path):
     script = _sh(tmp_path, content=(
         ": SC scene alpha\necho a\n"
@@ -104,6 +110,7 @@ def test_sh_input_split_scenes(tmp_path):
     assert (tmp_path / "beta.cast").exists()
 
 
+@requires_agg
 def test_sh_input_single_cast_default(tmp_path):
     script = _sh(tmp_path, content=(
         ": SC scene alpha\necho a\n"

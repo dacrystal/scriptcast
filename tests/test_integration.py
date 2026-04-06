@@ -1,15 +1,20 @@
 # tests/test_integration.py
 """Integration test using examples/tutorial.sh as a real end-to-end fixture."""
 import json
+import shutil
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from scriptcast.__main__ import cli
 
+requires_agg = pytest.mark.skipif(shutil.which("agg") is None, reason="agg not installed")
+
 TUTORIAL_SCRIPT = Path(__file__).parent.parent / "examples" / "tutorial.sh"
 
 
+@requires_agg
 def test_basic_example_end_to_end(tmp_path):
     """examples/tutorial.sh produces a single tutorial.cast with valid asciinema v2 header."""
     runner = CliRunner()
@@ -26,6 +31,7 @@ def test_basic_example_end_to_end(tmp_path):
     assert header["height"] == 8
 
 
+@requires_agg
 def test_basic_example_end_to_end_split_mode(tmp_path):
     """--split-scenes produces one .cast per scene."""
     runner = CliRunner()
@@ -37,7 +43,7 @@ def test_basic_example_end_to_end_split_mode(tmp_path):
 
     cast_files = sorted(tmp_path.glob("*.cast"))
     names = {f.stem for f in cast_files}
-    assert names == {"intro", "mock", "expect", "filter", "comment", "sleep", "record"}
+    assert names == {"intro", "mock", "expect", "filter", "comment", "sleep", "word_speed", "record"}
 
 
 def test_basic_example_record_stage(tmp_path):
@@ -57,6 +63,7 @@ def test_basic_example_record_stage(tmp_path):
     assert header["directive-prefix"] == "SC"
 
 
+@requires_agg
 def test_basic_example_mock_scene_shows_command(tmp_path):
     """`tutorial.cast` contains the mock deploy command as a typed command trace."""
     runner = CliRunner()
@@ -75,6 +82,7 @@ def test_basic_example_mock_scene_shows_command(tmp_path):
     assert "Deploying to production" in all_text
 
 
+@requires_agg
 def test_basic_example_filter_applied(tmp_path):
     """`tutorial.cast` must not contain the raw working directory path."""
     runner = CliRunner()

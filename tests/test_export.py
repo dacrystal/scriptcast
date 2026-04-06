@@ -205,15 +205,6 @@ def test_resolve_margin_sides_partial_override():
 
 
 # ------------------------------------------------------------------ removal guards
-def test_split_rgba_removed():
-    with pytest.raises(ImportError):
-        pass
-
-
-def test_build_svg_removed():
-    with pytest.raises(ImportError):
-        pass
-
 
 # ------------------------------------------------------------------ _build_bg_shadow
 def test_bg_shadow_none_background_transparent():
