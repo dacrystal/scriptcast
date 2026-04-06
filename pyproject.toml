@@ -62,5 +62,9 @@ disallow_untyped_defs = true
 module = ["PIL", "PIL.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
 # Entry-point group for third-party directives. See DIRECTIVES.md.
 [project.entry-points."scriptcast.directives"]

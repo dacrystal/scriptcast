@@ -1,6 +1,4 @@
-import shutil
 
-import pytest
 
 from scriptcast.directives import (
     CommentDirective,

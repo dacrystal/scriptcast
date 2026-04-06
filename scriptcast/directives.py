@@ -4,9 +4,10 @@ import shlex
 import subprocess
 import warnings
 from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import Iterator, Literal
+from typing import Literal
 
 from .config import ScriptcastConfig
 
@@ -103,7 +104,8 @@ class MockDirective(Directive):
             quote = m.group(2)
             delim = m.group(3)
             out.extend([
-                f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat) <<{quote}{delim}{quote}\n",
+                f"(: {self.dp} mark mock; set +x; echo + {cmd_args}; cat)"
+                f" <<{quote}{delim}{quote}\n",
                 *body,
                 closing,
             ])
@@ -184,7 +186,8 @@ class ExpectDirective(Directive):
             # Pattern 2: raw expect call (not via SC expect directive)
             elif e.type == "cmd" and (e.text == "expect" or e.text.startswith("expect ")):
                 i += 1
-                if i < len(events) and events[i].type == "out" and events[i].text.startswith("spawn "):
+                if (i < len(events) and events[i].type == "out"
+                        and events[i].text.startswith("spawn ")):
                     cmd = events[i].text[len("spawn "):]
                     out.append(ScEvent(e.ts, "cmd", cmd))
                     i += 1

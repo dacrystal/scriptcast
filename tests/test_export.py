@@ -2,6 +2,7 @@
 
 import pytest
 
+
 # ------------------------------------------------------------------ ThemeConfig
 def test_theme_config_has_frame_bar():
     from scriptcast.config import ThemeConfig
@@ -166,6 +167,7 @@ def test_hex_rgba_uppercase():
 
 def test_hex_rgba_invalid_length_raises():
     import pytest
+
     from scriptcast.export import _hex_rgba
     with pytest.raises(ValueError, match="_hex_rgba"):
         _hex_rgba("#fff")
@@ -198,19 +200,19 @@ def test_resolve_margin_sides_partial_override():
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _resolve_margin_sides
     config = ThemeConfig(background="#ff0000", margin_bottom=120)
-    t, r, b, l = _resolve_margin_sides(config)
-    assert t == 82 and r == 82 and b == 120 and l == 82
+    t, r, b, left = _resolve_margin_sides(config)
+    assert t == 82 and r == 82 and b == 120 and left == 82
 
 
 # ------------------------------------------------------------------ removal guards
 def test_split_rgba_removed():
     with pytest.raises(ImportError):
-        from scriptcast.export import _split_rgba
+        pass
 
 
 def test_build_svg_removed():
     with pytest.raises(ImportError):
-        from scriptcast.export import _build_svg
+        pass
 
 
 # ------------------------------------------------------------------ _build_bg_shadow
@@ -272,6 +274,7 @@ def test_bg_shadow_gradient_too_many_stops_raises():
 def test_bg_shadow_adds_alpha_near_window():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _build_bg_shadow, build_layout
     config = ThemeConfig(
@@ -303,6 +306,7 @@ def test_bg_shadow_disabled_no_change():
 def test_preprocess_frames_padded_size():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     frame = Image.new("RGBA", (100, 50), (40, 42, 54, 255))
@@ -314,6 +318,7 @@ def test_preprocess_frames_padded_size():
 def test_preprocess_frames_detects_bg_from_top_center():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     frame = Image.new("RGBA", (100, 50), (0, 0, 0, 255))
@@ -326,6 +331,7 @@ def test_preprocess_frames_detects_bg_from_top_center():
 def test_preprocess_frames_transparent_corners_show_bg():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     w, h = 50, 30
@@ -343,6 +349,7 @@ def test_preprocess_frames_transparent_corners_show_bg():
 def test_preprocess_frames_padding_filled_with_bg():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _preprocess_frames
     w, h = 50, 30
@@ -513,6 +520,7 @@ def test_chrome_no_traffic_lights_when_buttons_false():
 def test_watermark_none_returns_unchanged():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
@@ -523,6 +531,7 @@ def test_watermark_none_returns_unchanged():
 def test_watermark_text_modifies_image():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
@@ -533,6 +542,7 @@ def test_watermark_text_modifies_image():
 def test_scriptcast_watermark_disabled_returns_unchanged():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_scriptcast_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
@@ -543,6 +553,7 @@ def test_scriptcast_watermark_disabled_returns_unchanged():
 def test_scriptcast_watermark_enabled_modifies_image():
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_scriptcast_watermark
     base = Image.new("RGBA", (200, 200), (20, 20, 20, 255))
@@ -593,6 +604,7 @@ def test_apply_export_png_produces_png_file(tmp_path):
 def test_apply_export_with_frame_expands_canvas(tmp_path):
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export
     gif = tmp_path / "out.gif"
@@ -612,6 +624,7 @@ def test_apply_export_with_frame_expands_canvas(tmp_path):
 # ------------------------------------------------------------------ generate_export
 def test_generate_export_calls_agg(tmp_path):
     from unittest.mock import MagicMock, patch
+
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
     cast_file.write_text('{"version":2}\n')
@@ -627,9 +640,11 @@ def test_generate_export_calls_agg(tmp_path):
 
 
 def test_generate_export_missing_agg_raises():
-    import pytest
-    from unittest.mock import patch
     from pathlib import Path
+    from unittest.mock import patch
+
+    import pytest
+
     from scriptcast.export import AggNotFoundError, generate_export
     with patch("shutil.which", return_value=None):
         with pytest.raises(AggNotFoundError, match="agg"):
@@ -638,6 +653,7 @@ def test_generate_export_missing_agg_raises():
 
 def test_generate_export_calls_apply_export_when_config_provided(tmp_path):
     from unittest.mock import MagicMock, patch
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
@@ -646,7 +662,6 @@ def test_generate_export_calls_apply_export_when_config_provided(tmp_path):
 
     def fake_run(*args, **kwargs):
         # Write to the temp gif path that agg would write to (second arg)
-        import os
         from PIL import Image
         temp_path = args[0][2]  # The temp gif path is the third argument to agg
         frame = Image.new("RGB", (80, 24), (30, 30, 30))
@@ -668,7 +683,8 @@ def test_generate_export_calls_apply_export_when_config_provided(tmp_path):
 
 
 def test_generate_export_skips_apply_export_when_no_config(tmp_path):
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
+
     from scriptcast.export import generate_export
     cast_file = tmp_path / "scene.cast"
     cast_file.write_text('{"version":2}\n')
@@ -686,9 +702,10 @@ def test_generate_export_skips_apply_export_when_no_config(tmp_path):
 
 def test_generate_export_png_format_no_temp_files_in_cast_dir(tmp_path):
     """format='png': final .png is in cast dir, no temp gifs or pngs left behind."""
-    from unittest.mock import patch, MagicMock
-    from scriptcast.export import generate_export, apply_export
+    from unittest.mock import patch
+
     from scriptcast.config import ThemeConfig
+    from scriptcast.export import generate_export
 
     cast_path = tmp_path / "demo.cast"
     cast_path.write_text('{"version":2,"width":80,"height":24}\n')
@@ -728,6 +745,7 @@ def _sc_content() -> str:
 def test_export_command_exists():
     """The CLI help text describes export capability (no longer a subcommand)."""
     from click.testing import CliRunner
+
     from scriptcast.__main__ import cli
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
@@ -737,7 +755,9 @@ def test_export_command_exists():
 
 def test_export_command_default_frame_passes_config(tmp_path):
     from unittest.mock import patch
+
     from click.testing import CliRunner
+
     from scriptcast.__main__ import cli
     from scriptcast.config import ThemeConfig
 
@@ -757,7 +777,9 @@ def test_export_command_default_frame_passes_config(tmp_path):
 
 def test_export_command_error_is_clean(tmp_path):
     from unittest.mock import patch
+
     from click.testing import CliRunner
+
     from scriptcast.__main__ import cli
 
     sc_file = tmp_path / "demo.sc"
@@ -779,6 +801,7 @@ def test_apply_export_content_visible_in_content_area(tmp_path):
     """Content pixels must appear at the content position in the output."""
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export, build_layout
 
@@ -809,6 +832,7 @@ def test_apply_watermark_centered_in_margin():
     """With margin_bottom set, watermark position differs from the no-margin default."""
     pytest.importorskip("PIL")
     from PIL import Image
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import _apply_watermark
 
@@ -828,8 +852,9 @@ def test_apply_export_png_format_writes_png_file(tmp_path):
     """apply_export with format='png' writes a PNG file with RGBA (not quantized palette)."""
     pytest.importorskip("PIL")
     from PIL import Image
-    from scriptcast.export import apply_export
+
     from scriptcast.config import ThemeConfig
+    from scriptcast.export import apply_export
 
     # Create a minimal single-frame GIF
     frame = Image.new("RGBA", (80, 24), (30, 30, 30, 255))
@@ -852,6 +877,7 @@ def test_apply_export_png_format_writes_png_file(tmp_path):
 def test_generate_export_no_temp_gif_left_in_cast_dir(tmp_path):
     """Intermediate .gif from agg must not be left in the cast directory."""
     from unittest.mock import patch
+
     from scriptcast.export import generate_export
 
     cast_path = tmp_path / "demo.cast"
@@ -876,8 +902,9 @@ def test_generate_export_no_temp_gif_left_in_cast_dir(tmp_path):
 def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
     """Temp gif is cleaned up even when agg succeeds but processing fails."""
     from unittest.mock import patch
-    from scriptcast.export import generate_export
+
     from scriptcast.config import ThemeConfig
+    from scriptcast.export import generate_export
 
     cast_path = tmp_path / "demo.cast"
     cast_path.write_text('{"version":2,"width":80,"height":24}\n')
@@ -903,6 +930,7 @@ def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
 
 def test_apply_export_calls_on_frame(tmp_path):
     from PIL import Image, ImageDraw
+
     from scriptcast.config import ThemeConfig
     from scriptcast.export import apply_export
 
@@ -940,8 +968,9 @@ def test_apply_export_calls_on_frame(tmp_path):
 
 def test_generate_export_passes_on_frame_to_apply_export(tmp_path):
     from unittest.mock import patch
-    from scriptcast.export import generate_export
+
     from scriptcast.config import ThemeConfig
+    from scriptcast.export import generate_export
 
     cast_path = tmp_path / "demo.cast"
     cast_path.write_text("")

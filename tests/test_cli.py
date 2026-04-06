@@ -7,7 +7,6 @@ from click.testing import CliRunner
 
 from scriptcast.__main__ import cli
 
-
 # ── helpers ────────────────────────────────────────────────────────────────
 
 def _minimal_cast(tmp_path: Path, name: str = "demo") -> Path:
@@ -200,7 +199,8 @@ def test_install_command_has_prefix_option():
 
 
 def test_install_downloads_agg_and_fonts(tmp_path):
-    import io, zipfile
+    import io
+    import zipfile
     from unittest.mock import MagicMock
 
     buf = io.BytesIO()

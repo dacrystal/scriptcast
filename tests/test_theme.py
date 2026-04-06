@@ -8,7 +8,6 @@ import json
 
 import pytest
 
-
 # --- ThemeConfig.apply() via ScriptcastConfig ---
 
 def test_sc_apply_theme_background():

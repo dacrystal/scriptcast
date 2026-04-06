@@ -13,7 +13,6 @@ from PIL.Image import Dither
 
 from .config import ThemeConfig
 
-
 TITLE_BAR_HEIGHT = 28
 _PACIFICO = Path(__file__).parent / "assets" / "fonts" / "Pacifico.ttf"
 _DM_SANS = Path(__file__).parent / "assets" / "fonts" / "DMSans-Regular.ttf"
@@ -406,7 +405,9 @@ def apply_scriptcast_watermark(gif_path: Path, config: ThemeConfig) -> None:
     )
 
 
-def _chrome_colors(config: ThemeConfig, window_bg: tuple[int, int, int] = (30, 30, 30)) -> list[tuple[int, int, int]]:
+def _chrome_colors(
+    config: ThemeConfig, window_bg: tuple[int, int, int] = (30, 30, 30),
+) -> list[tuple[int, int, int]]:
     """RGB colors that must be reserved in the GIF palette."""
     colors = [_hex_rgba(base)[:3] for _, base, _ in _TRAFFIC_LIGHTS]
     colors.append(window_bg)
@@ -516,7 +517,9 @@ def apply_export(
     else:
         template_rgb = Image.alpha_composite(bg_shadow, chrome).convert("RGB")
         rgb_canvases = [c.convert("RGB") for c in rgba_frames]
-        palette_ref = _build_global_palette(template_rgb, rgb_canvases, config, window_bg=terminal_bg)
+        palette_ref = _build_global_palette(
+            template_rgb, rgb_canvases, config, window_bg=terminal_bg,
+        )
         out_frames = [
             f.quantize(palette=palette_ref, dither=Dither.NONE)
             for f in rgb_canvases

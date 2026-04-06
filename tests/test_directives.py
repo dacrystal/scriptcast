@@ -3,6 +3,7 @@ import json
 from collections import deque
 
 import pytest
+
 from scriptcast.config import ScriptcastConfig
 from scriptcast.directives import (
     CommentDirective,
@@ -514,6 +515,7 @@ def test_expect_directive_handles_expect_input():
 
 def test_expect_directive_gen_advances_cursor_by_input_wait():
     from collections import deque
+
     from scriptcast.config import ScriptcastConfig
     d = ExpectDirective()
     active = ScriptcastConfig()
@@ -525,6 +527,7 @@ def test_expect_directive_gen_advances_cursor_by_input_wait():
 
 def test_expect_directive_gen_emits_chars():
     from collections import deque
+
     from scriptcast.config import ScriptcastConfig
     d = ExpectDirective()
     active = ScriptcastConfig()
@@ -541,6 +544,7 @@ def test_expect_directive_gen_emits_chars():
 
 def test_expect_directive_gen_empty_input():
     from collections import deque
+
     from scriptcast.config import ScriptcastConfig
     d = ExpectDirective()
     active = ScriptcastConfig()

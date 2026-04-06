@@ -212,8 +212,9 @@ def test_quoted_prompt_in_pre_scene_set(tmp_path):
 
 
 def test_build_config_from_sc_text_reads_header():
-    from scriptcast.generator import build_config_from_sc_text
     import json
+
+    from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "shell": "bash", "width": 80, "height": 24,
                          "directive-prefix": "SC"})
     sc = header + "\n"
@@ -224,8 +225,9 @@ def test_build_config_from_sc_text_reads_header():
 
 
 def test_build_config_from_sc_text_applies_pre_scene_set():
-    from scriptcast.generator import build_config_from_sc_text
     import json
+
+    from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
         json.dumps([0.0, "dir", "set type_speed 20"]),
@@ -240,8 +242,9 @@ def test_build_config_from_sc_text_applies_pre_scene_set():
 
 
 def test_build_config_from_sc_text_stops_at_scene():
-    from scriptcast.generator import build_config_from_sc_text
     import json
+
+    from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 100, "height": 28, "directive-prefix": "SC"})
     events = [
         json.dumps([0.0, "dir", "scene main"]),
@@ -262,9 +265,10 @@ def test_build_config_from_sc_text_empty_returns_defaults():
 # --- build_config_from_sc_text: base parameter ---
 
 def test_build_config_from_sc_text_base_provides_defaults():
+    import json
+
     from scriptcast.config import ScriptcastConfig
     from scriptcast.generator import build_config_from_sc_text
-    import json
     base = ScriptcastConfig(prompt="THEME_PROMPT")
     base.theme.radius = 99
     header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
@@ -275,9 +279,10 @@ def test_build_config_from_sc_text_base_provides_defaults():
 
 
 def test_build_config_from_sc_text_sc_overrides_base():
+    import json
+
     from scriptcast.config import ScriptcastConfig
     from scriptcast.generator import build_config_from_sc_text
-    import json
     base = ScriptcastConfig(prompt="THEME_PROMPT")
     header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
     events = [json.dumps([0.0, "dir", "set prompt SC_PROMPT"])]
@@ -287,8 +292,9 @@ def test_build_config_from_sc_text_sc_overrides_base():
 
 
 def test_build_config_from_sc_text_base_none_is_default():
-    from scriptcast.generator import build_config_from_sc_text
     import json
+
+    from scriptcast.generator import build_config_from_sc_text
     header = json.dumps({"version": 1, "width": 80, "height": 24, "directive-prefix": "SC"})
     sc = header + "\n"
     cfg = build_config_from_sc_text(sc, base=None)
@@ -321,8 +327,8 @@ def test_generate_from_sc_text_sc_prompt_overrides_base(tmp_path):
     paths = generate_from_sc_text(sc, tmp_path, base=base)
     _, cast = _cast(paths[0])
     prompt_text = "".join(e[2] for e in cast)
-    assert "SCRIPT>" in prompt_text, f"Expected 'SCRIPT>' prompt override in cast"
-    assert "THEME>" not in prompt_text, f"Theme prompt should be overridden"
+    assert "SCRIPT>" in prompt_text, "Expected 'SCRIPT>' prompt override in cast"
+    assert "THEME>" not in prompt_text, "Theme prompt should be overridden"
 
 
 def test_generate_from_sc_text_base_type_speed(tmp_path):

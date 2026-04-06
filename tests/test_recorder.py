@@ -3,11 +3,9 @@ import json
 import logging
 import shutil
 
-import pytest
-
 from scriptcast.config import ScriptcastConfig
 from scriptcast.directives import ScEvent
-from scriptcast.recorder import _parse_raw, _serialise, _postprocess, _preprocess, record
+from scriptcast.recorder import _parse_raw, _postprocess, _preprocess, _serialise, record
 
 
 def test_record_creates_sc_file(tmp_path):

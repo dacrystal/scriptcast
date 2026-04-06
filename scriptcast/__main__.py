@@ -220,7 +220,10 @@ def cli(
         trace_prefix=trace_prefix,
         shell=resolved_shell,
     )
-    logger.debug("Config: width=%d height=%d type_speed=%d prompt=%r", config.width, config.height, config.type_speed, config.prompt)
+    logger.debug(
+        "Config: width=%d height=%d type_speed=%d prompt=%r",
+        config.width, config.height, config.type_speed, config.prompt,
+    )
 
     # Stage 1: record (only for .sh input)
     sc_path: Path | None = None

@@ -85,13 +85,13 @@ class ThemeConfig:
     def apply(self, key: str, value: str) -> None:
         """Apply a single theme key-value pair. key is dash-form without 'theme-' prefix."""
         if key == "margin":
-            t, r, b, l = _parse_css_shorthand(value)
+            t, r, b, left = _parse_css_shorthand(value)
             self.margin_top, self.margin_right = t, r
-            self.margin_bottom, self.margin_left = b, l
+            self.margin_bottom, self.margin_left = b, left
         elif key == "padding":
-            t, r, b, l = _parse_css_shorthand(value)
+            t, r, b, left = _parse_css_shorthand(value)
             self.padding_top, self.padding_right = t, r
-            self.padding_bottom, self.padding_left = b, l
+            self.padding_bottom, self.padding_left = b, left
         elif key in _INT_THEME_PROPS:
             setattr(self, key.replace("-", "_"), int(value))
         elif key in _BOOL_THEME_PROPS:

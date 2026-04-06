@@ -123,7 +123,10 @@ def record(
         _, _, script_content = script_content.partition("\n")
 
     script_content = _preprocess(script_content, config.directive_prefix)
-    logger.debug("Recording %s (shell=%s, width=%d, height=%d)", script_path.name, shell, config.width, config.height)
+    logger.debug(
+        "Recording %s (shell=%s, width=%d, height=%d)",
+        script_path.name, shell, config.width, config.height,
+    )
 
     master_fd = -1
     proc = None
@@ -195,7 +198,10 @@ def record(
         sc_path.write_text(header + "\n" + clean_text)
 
         if proc.returncode != 0:
-            logger.warning("Script exited with non-zero status %d; .sc file written anyway.", proc.returncode)
+            logger.warning(
+                "Script exited with non-zero status %d; .sc file written anyway.",
+                proc.returncode,
+            )
         return proc.returncode
     finally:
         if master_fd != -1:
