@@ -26,17 +26,17 @@ changelog-bump:
 
 # Prepend new entries to CHANGELOG.md for the next release
 changelog:
+	$(eval VERSION := $(shell git cliff --bumped-version 2>/dev/null))
 	touch CHANGELOG.md
 	git cliff --unreleased --prepend CHANGELOG.md --bump
-	@echo "CHANGELOG.md updated. Review, then run: make release"
+	@echo "CHANGELOG.md updated to $(VERSION). Review, then run: make release"
 
 # Full release: update changelog, commit, tag, push
 release:
-	$(eval VERSION := $(shell git cliff --bumped-version))
-	touch CHANGELOG.md
-	git cliff --unreleased --prepend CHANGELOG.md --bump
+	$(eval VERSION := $(shell git cliff --bumped-version 2>/dev/null))
 	git add CHANGELOG.md
-	git commit -m "chore: release $(VERSION)"
+	@git commit -m "chore: release $(VERSION)" || { echo "Error: CHANGELOG.md unchanged. Run 'make changelog' first."; exit 1; }
 	git tag $(VERSION)
-	git push origin main --tags
+	git push origin main
+	git push origin $(VERSION)
 	@echo "Released $(VERSION)"
