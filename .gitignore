@@ -177,3 +177,4 @@ pyrightconfig.json
 
 # Git worktrees
 .worktrees/
+uv.lock
