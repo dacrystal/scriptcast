@@ -7,7 +7,7 @@
 : SC set theme-frame-bar-buttons true
 : SC set theme-scriptcast-watermark true
 : SC set theme-background 1a1a2e,16213e
-: SC set theme-margin 32 32 64
+: SC set theme-margin 82 82 120
 : SC set theme-padding 14
 : SC set theme-radius 12
 : SC set theme-border-color ffffff30

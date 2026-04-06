@@ -429,3 +429,36 @@ def test_record_pty_translates_lf_to_crlf(tmp_path):
     out_texts = [e[2] for e in events if e[1] == "out"]
     assert any("hello\r\n" in t for t in out_texts)
 
+
+def test_record_xtrace_log_creates_file(tmp_path):
+    script = tmp_path / "demo.sh"
+    script.write_text("echo hello\n")
+    sc_path = tmp_path / "demo.sc"
+    config = ScriptcastConfig()
+    shell = shutil.which("bash")
+    record(script, sc_path, config, shell, xtrace_log=True)
+    xtrace_path = tmp_path / "demo.xtrace"
+    assert xtrace_path.exists()
+
+
+def test_record_xtrace_log_contains_raw_output(tmp_path):
+    script = tmp_path / "demo.sh"
+    script.write_text("echo scriptcast_xtrace_marker\n")
+    sc_path = tmp_path / "demo.sc"
+    config = ScriptcastConfig()
+    shell = shutil.which("bash")
+    record(script, sc_path, config, shell, xtrace_log=True)
+    xtrace_path = tmp_path / "demo.xtrace"
+    assert "scriptcast_xtrace_marker" in xtrace_path.read_text()
+
+
+def test_record_no_xtrace_log_by_default(tmp_path):
+    script = tmp_path / "demo.sh"
+    script.write_text("echo hello\n")
+    sc_path = tmp_path / "demo.sc"
+    config = ScriptcastConfig()
+    shell = shutil.which("bash")
+    record(script, sc_path, config, shell)
+    xtrace_path = tmp_path / "demo.xtrace"
+    assert not xtrace_path.exists()
+

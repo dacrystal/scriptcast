@@ -103,8 +103,12 @@ def record(
     sc_path: str | Path,
     config: ScriptcastConfig,
     shell: str,
+    xtrace_log: bool = False,
 ) -> int:
     """Run script_path in shell with tracing, write cleaned output to sc_path.
+
+    If xtrace_log is True, the raw PTY capture (before postprocessing) is
+    written to a file beside sc_path with the suffix ``.xtrace``.
 
     Returns the shell exit code. Warns (does not raise) on non-zero exit.
     """
@@ -173,6 +177,10 @@ def record(
         logger.debug("PTY capture complete: %d raw lines", len(raw_lines))
 
         raw_text = "".join(raw_lines)
+        if xtrace_log:
+            xtrace_path = sc_path.with_suffix('.xtrace')
+            xtrace_path.write_text(raw_text)
+            logger.info("Saved: %s", xtrace_path)
         clean_text = _postprocess(raw_text, config.trace_prefix, config.directive_prefix)
         logger.debug("Post-processed to %d events", clean_text.count("\n"))
 

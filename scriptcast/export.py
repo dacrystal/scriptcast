@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -269,11 +270,16 @@ def _build_chrome(
                                       _LIGHT_RADIUS, base_color, highlight_color)
 
         if config.frame_bar_title:
+            try:
+                title_font = ImageFont.truetype(str(_DM_SANS), size=12)
+            except Exception:
+                title_font = ImageFont.load_default()
             draw = ImageDraw.Draw(chrome)
             draw.text(
                 (wx + ww // 2, title_cy),
                 config.frame_bar_title,
                 fill=_hex_rgba(_TITLE_COLOR),
+                font=title_font,
                 anchor="mm",
             )
 
@@ -447,10 +453,17 @@ def _build_global_palette(
     return palette_img
 
 
-def apply_export(gif_path: Path, config: ThemeConfig, format: str = "gif") -> None:
+def apply_export(
+    gif_path: Path,
+    config: ThemeConfig,
+    format: str = "gif",
+    on_frame: Callable[[int, int], None] | None = None,
+) -> None:
     """Post-process a GIF in-place: apply background, shadow, chrome, and watermarks.
 
     format: "gif" writes .gif (quantized 256 colours); "png" writes .png (full RGBA).
+    on_frame: optional callback called after each frame is processed with (current, total) where
+              current is 1-based frame number and total is the total number of frames.
     """
     raw_frames: list[Image.Image] = []
     durations: list[int] = []
@@ -477,8 +490,9 @@ def apply_export(gif_path: Path, config: ThemeConfig, format: str = "gif") -> No
 
     output_path = gif_path if format == "gif" else gif_path.with_suffix(".png")
 
+    total_frames = len(frames)
     rgba_frames = []
-    for frame in frames:
+    for i, frame in enumerate(frames):
         canvas = bg_shadow.copy()
         canvas = Image.alpha_composite(canvas, chrome)
         content_canvas = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
@@ -487,6 +501,8 @@ def apply_export(gif_path: Path, config: ThemeConfig, format: str = "gif") -> No
         canvas = _apply_watermark(canvas, config, margin_bottom=resolved_mb)
         canvas = _apply_scriptcast_watermark(canvas, config)
         rgba_frames.append(canvas)
+        if on_frame is not None:
+            on_frame(i + 1, total_frames)
 
     if format == "png":
         rgba_frames[0].save(
@@ -519,6 +535,7 @@ def generate_export(
     cast_path: str | Path,
     frame_config: ThemeConfig | None = None,
     format: str = "gif",
+    on_frame: Callable[[int, int], None] | None = None,
 ) -> Path:
     """Convert a .cast file to GIF or PNG using agg, then apply frame if configured.
 
@@ -527,6 +544,8 @@ def generate_export(
 
     format: "gif" writes .gif; "png" writes .png (full RGBA). Default here is "gif"
     for API backward compatibility — the CLI defaults to "png".
+    on_frame: optional callback called after each frame is processed with (current, total) where
+              current is 1-based frame number and total is the total number of frames.
     """
     agg = shutil.which("agg")
     if agg is None:
@@ -543,7 +562,7 @@ def generate_export(
         subprocess.run([agg, str(cast_path), str(tmp_gif_path)], check=True)
 
         if frame_config is not None:
-            apply_export(tmp_gif_path, frame_config, format=format)
+            apply_export(tmp_gif_path, frame_config, format=format, on_frame=on_frame)
             if format == "gif":
                 final_path = cast_path.with_suffix(".gif")
                 shutil.move(str(tmp_gif_path), str(final_path))

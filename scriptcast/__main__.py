@@ -140,6 +140,8 @@ class _ScriptOrSubcommandGroup(click.Group):
 @click.option("--shell", default=None)
 @click.option("--split-scenes/--no-split-scenes", default=False)
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
+@click.option("--xtrace-log", is_flag=True, default=False,
+              help="Save raw xtrace capture to <stem>.xtrace (only valid for .sh input).")
 @click.pass_context
 def cli(
     ctx: click.Context,
@@ -152,6 +154,7 @@ def cli(
     shell: str | None,
     split_scenes: bool,
     verbose: bool,
+    xtrace_log: bool,
 ) -> None:
     """Generate terminal demos from shell scripts, .sc files, or .cast files.
 
@@ -200,6 +203,11 @@ def cli(
             "--no-export requires a .sh or .sc input (a .cast file is already at the export stage)."
         )
 
+    if xtrace_log and suffix != ".sh":
+        raise click.UsageError(
+            "--xtrace-log requires a .sh input (xtrace is captured during recording)."
+        )
+
     out_dir = Path(output_dir) if output_dir else in_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     resolved_shell = shell or _default_shell()
@@ -219,7 +227,7 @@ def cli(
     if suffix == ".sh":
         sc_path = out_dir / in_path.with_suffix(".sc").name
         logger.info("Recording %s ...", in_path.name)
-        do_record(in_path, sc_path, config, resolved_shell)
+        do_record(in_path, sc_path, config, resolved_shell, xtrace_log=xtrace_log)
     elif suffix == ".sc":
         sc_path = in_path
 
@@ -244,16 +252,34 @@ def cli(
     # Stage 3: export
     logger.info("Exporting to %s ...", output_format.upper())
     for cast_path in cast_paths:
+        _bar: list = [None]
+
+        def on_frame(current: int, total: int) -> None:
+            if _bar[0] is None:
+                _bar[0] = click.progressbar(
+                    length=total,
+                    label=f"{output_format.upper()}   ",
+                    width=0,
+                    show_eta=True,
+                    file=sys.stderr,
+                )
+                _bar[0].__enter__()
+            _bar[0].update(1)
+
         try:
             export_path = generate_export(
                 cast_path,
                 config.theme if config.theme.frame else None,
                 format=output_format,
+                on_frame=on_frame,
             )
             if not config.theme.frame and config.theme.scriptcast_watermark:
                 apply_scriptcast_watermark(export_path, config.theme)
         except (AggNotFoundError, RuntimeError) as e:
             raise click.ClickException(str(e))
+        finally:
+            if _bar[0] is not None:
+                _bar[0].__exit__(None, None, None)
         logger.info("Generated: %s", export_path)
 
 

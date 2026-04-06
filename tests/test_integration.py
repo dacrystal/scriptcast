@@ -23,7 +23,7 @@ def test_basic_example_end_to_end(tmp_path):
     header = json.loads(lines[0])
     assert header["version"] == 2
     assert header["width"] == 80
-    assert header["height"] == 24
+    assert header["height"] == 8
 
 
 def test_basic_example_end_to_end_split_mode(tmp_path):

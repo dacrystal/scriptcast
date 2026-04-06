@@ -9,7 +9,7 @@
 : SC set theme-background f0f4ff,e2e8f8
 : SC set theme-border-color 00000020
 : SC set theme-border-width 1
-: SC set theme-margin 32 32 64
+: SC set theme-margin 82 82 120
 : SC set theme-padding 14
 : SC set theme-radius 12
 : SC set theme-shadow true

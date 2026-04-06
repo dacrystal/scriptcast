@@ -247,3 +247,51 @@ def test_generate_subcommand_removed():
 
 def test_export_subcommand_removed():
     assert "export" not in cli.commands
+
+
+# ── --xtrace-log flag ──────────────────────────────────────────────────────
+
+def test_xtrace_log_creates_xtrace_file(tmp_path):
+    script = _sh(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["--output-dir", str(tmp_path), "--no-export", "--xtrace-log", str(script)]
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "demo.xtrace").exists()
+
+
+def test_xtrace_log_with_sc_input_errors(tmp_path):
+    sc = _minimal_sc(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--xtrace-log", "--no-export", str(sc)])
+    assert result.exit_code != 0
+    assert "xtrace-log" in result.output.lower() or "xtrace" in result.output.lower()
+
+
+def test_xtrace_log_with_cast_input_errors(tmp_path):
+    cast = _minimal_cast(tmp_path)
+    runner = CliRunner()
+    with patch("scriptcast.__main__.generate_export", return_value=cast), \
+         patch("scriptcast.__main__.apply_scriptcast_watermark"):
+        result = runner.invoke(cli, ["--xtrace-log", str(cast)])
+    assert result.exit_code != 0
+    assert "xtrace" in result.output.lower()
+
+
+def test_export_on_frame_callback_is_passed(tmp_path):
+    """generate_export is called with a callable on_frame argument."""
+    cast = _minimal_cast(tmp_path)
+    runner = CliRunner()
+    received = {}
+
+    def fake_generate_export(cast_path, frame_config, format, on_frame=None):
+        received["on_frame"] = on_frame
+        return cast
+
+    with patch("scriptcast.__main__.generate_export", side_effect=fake_generate_export), \
+         patch("scriptcast.__main__.apply_scriptcast_watermark"):
+        result = runner.invoke(cli, [str(cast)])
+
+    assert result.exit_code == 0, result.output
+    assert callable(received.get("on_frame"))

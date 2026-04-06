@@ -83,7 +83,7 @@ def test_apply_word_speed():
 def test_theme_config_defaults():
     from scriptcast.config import ThemeConfig
     c = ThemeConfig()
-    assert c.frame_bar_title == ""
+    assert c.frame_bar_title == "Terminal"
     # Individual padding sides
     assert c.padding_top == 14
     assert c.padding_right == 14

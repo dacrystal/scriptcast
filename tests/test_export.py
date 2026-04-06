@@ -10,7 +10,7 @@ def test_theme_config_has_frame_bar():
 
 def test_theme_config_has_frame_bar_title():
     from scriptcast.config import ThemeConfig
-    assert ThemeConfig().frame_bar_title == ""
+    assert ThemeConfig().frame_bar_title == "Terminal"
 
 
 def test_theme_config_frame_bar_color_default():
@@ -698,7 +698,7 @@ def test_generate_export_png_format_no_temp_files_in_cast_dir(tmp_path):
         frame = Image.new("RGB", (80, 24), (30, 30, 30))
         frame.save(str(cmd[2]), format="GIF")
 
-    def fake_apply_export(gif_path, config, format):
+    def fake_apply_export(gif_path, config, format, on_frame=None):
         # Simulate what apply_export does: write .png next to the gif
         from PIL import Image
         frame = Image.new("RGBA", (80, 24), (30, 30, 30, 255))
@@ -899,3 +899,68 @@ def test_generate_export_cleans_up_temp_gif_on_failure(tmp_path):
 
     # No temp gifs should be left in the cast directory
     assert not any(tmp_path.glob("*.gif"))
+
+
+def test_apply_export_calls_on_frame(tmp_path):
+    from PIL import Image, ImageDraw
+    from scriptcast.config import ThemeConfig
+    from scriptcast.export import apply_export
+
+    # 2-frame GIF, solid dark background with slight variation
+    bg = (30, 30, 30)
+    frame1 = Image.new("RGB", (80, 24), color=bg)
+    frame2 = Image.new("RGB", (80, 24), color=bg)
+    # Add a tiny difference to frame2 so Pillow doesn't merge them
+    draw = ImageDraw.Draw(frame2)
+    draw.point((0, 0), fill=(31, 30, 30))
+    gif_path = tmp_path / "test.gif"
+    frame1.save(gif_path, save_all=True, append_images=[frame2], loop=0, duration=100)
+
+    calls = []
+
+    def on_frame(current, total):
+        calls.append((current, total))
+
+    config = ThemeConfig(
+        frame=False,
+        scriptcast_watermark=False,
+        background=None,
+        shadow=False,
+        frame_bar=False,
+        border_width=0,
+        margin_top=0, margin_right=0, margin_bottom=0, margin_left=0,
+        padding_top=0, padding_right=0, padding_bottom=0, padding_left=0,
+    )
+    apply_export(gif_path, config, format="gif", on_frame=on_frame)
+
+    assert len(calls) == 2
+    assert calls[0] == (1, 2)
+    assert calls[1] == (2, 2)
+
+
+def test_generate_export_passes_on_frame_to_apply_export(tmp_path):
+    from unittest.mock import patch
+    from scriptcast.export import generate_export
+    from scriptcast.config import ThemeConfig
+
+    cast_path = tmp_path / "demo.cast"
+    cast_path.write_text("")
+    fake_gif = tmp_path / "fake.gif"
+    fake_gif.write_bytes(b"GIF89a")  # placeholder
+
+    def on_frame(current, total):
+        pass
+
+    config = ThemeConfig()
+
+    with patch("scriptcast.export.subprocess.run"), \
+         patch("scriptcast.export.apply_export") as mock_apply, \
+         patch("scriptcast.export.tempfile.mkstemp", return_value=(0, str(fake_gif))), \
+         patch("scriptcast.export.os.close"), \
+         patch("scriptcast.export.shutil.move"), \
+         patch("scriptcast.export.shutil.which", return_value="/usr/bin/agg"):
+        generate_export(cast_path, frame_config=config, format="gif", on_frame=on_frame)
+
+    mock_apply.assert_called_once()
+    _, kwargs = mock_apply.call_args
+    assert kwargs.get("on_frame") is on_frame

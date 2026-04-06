@@ -67,7 +67,7 @@ class ThemeConfig:
 
     # Title bar
     frame_bar: bool = True
-    frame_bar_title: str = ""
+    frame_bar_title: str = "Terminal"
     frame_bar_color: str = "252535"
     frame_bar_buttons: bool = True
 

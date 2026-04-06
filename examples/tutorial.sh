@@ -1,14 +1,15 @@
 #!/usr/bin/env scriptcast --directive-prefix SC --trace-prefix +
 
 # ── Global config ─────────────────────────────
+: SC set width 80
+: SC set height 8
 : SC set type_speed 40
 : SC set cmd_wait 300
 : SC set exit_wait 800
-: SC set width 80
-: SC set height 24
 : SC set input_wait 300
 : SC set enter_wait 100
 : SC set theme dark
+: SC helpers
 
 # ── Scene: intro ──────────────────────────────
 # Use SC record pause/resume to hide setup commands that
@@ -17,8 +18,6 @@
 
 : SC record pause
 APP_NAME="scriptcast"
-GREEN=$'\033[32m'
-RESET=$'\033[0m'
 : SC record resume
 
 echo "Welcome to $APP_NAME"
@@ -37,7 +36,6 @@ Tests:   ${GREEN}OK${RESET}
 Deploy:  ${GREEN}OK${RESET}  →  https://myapp.io
 EOF
 
-deploy
 
 # ── Scene: expect ─────────────────────────────
 # SC expect <binary> drives an interactive process with expect(1).
