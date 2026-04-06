@@ -87,6 +87,16 @@ def build_config(
     return base
 
 
+_BANNER = (
+    "   _____           _       __  ______           __\n"
+    "  / ___/__________(_)___  / /_/ ____/___ ______/ /_\n"
+    "  \\__ \\/ ___/ ___/ / __ \\/ __/ /   / __ `/ ___/ __/\n"
+    " ___/ / /__/ /  / / /_/ / /_/ /___/ /_/ (__  ) /_\n"
+    "/____/\\___/_/  /_/ .___/\\__/\\____/\\__,_/____/\\__/\n"
+    "                /_/\n"
+)
+
+
 class _ScriptOrSubcommandGroup(click.Group):
     """Click group that treats an unknown first positional as an input file path.
 
@@ -97,6 +107,10 @@ class _ScriptOrSubcommandGroup(click.Group):
     allows ``invoke_without_command=True`` to route straight to the callback.
     No private Click APIs are accessed.
     """
+
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        formatter.write(_BANNER)
+        super().format_help(ctx, formatter)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         # Use click.Command.parse_args (grandparent) to parse options, which
@@ -124,6 +138,7 @@ class _ScriptOrSubcommandGroup(click.Group):
     invoke_without_command=True,
     context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
 )
+@click.version_option(package_name="scriptcast")
 @click.option("--output-dir", default=None, type=click.Path())
 @click.option("--no-export", is_flag=True, default=False,
               help="Stop after generating .cast file(s); do not export to image.")

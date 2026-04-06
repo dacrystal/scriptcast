@@ -1,13 +1,12 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "hatch-fancy-pypi-readme"]
 build-backend = "hatchling.build"
 
 
 [project]
 name = "scriptcast"
-dynamic = ["version"]
+dynamic = ["version", "readme"]
 description = "Generate terminal demos (asciinema casts & GIFs) from simple shell-like scripts."
-readme = "README.md"
 requires-python = ">=3.10"
 authors = [
     {name = "Nasser Alansari", email = "dacrystal@users.noreply.github.com"},
@@ -42,6 +41,7 @@ dev = [
     "mypy>=1.10",
     "git-cliff>=2.0",
     "hatch-vcs>=0.4",
+    "hatch-fancy-pypi-readme",
 ]
 
 [tool.hatch.version]
@@ -77,3 +77,13 @@ disallow_untyped_defs = false
 
 # Entry-point group for third-party directives. See DIRECTIVES.md.
 [project.entry-points."scriptcast.directives"]
+
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '\(assets/'
+replacement = "(https://raw.githubusercontent.com/dacrystal/scriptcast/main/assets/"

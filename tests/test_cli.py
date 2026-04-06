@@ -42,6 +42,21 @@ def test_no_args_prints_help():
     assert "Usage" in result.output
 
 
+def test_version_flag():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--version"], prog_name="scriptcast")
+    assert result.exit_code == 0
+    assert "scriptcast, version" in result.output
+
+
+def test_help_shows_banner():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--help"])
+    assert result.exit_code == 0
+    # Unique substring from the slant figlet banner
+    assert "/ ___/__________" in result.output
+
+
 # ── error cases ────────────────────────────────────────────────────────────
 
 def test_nonexistent_file_errors(tmp_path):
