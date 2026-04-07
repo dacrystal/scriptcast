@@ -29,7 +29,7 @@ def test_sc_event_fields():
 def test_sc_event_is_frozen():
     e = ScEvent(ts=1.0, type="cmd", text="echo hi")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        e.ts = 2.0  # type: ignore[misc]
+        e.ts = 2.0
 
 
 def test_directive_pre_passthrough():
