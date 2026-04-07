@@ -1,3 +1,9 @@
+## [0.3.0] - 2026-04-07
+
+### Added
+
+- Fix default theme loading and zsh xtrace ESC byte corruption ([#1](https://github.com/dacrystal/scriptcast/issues/1))
+
 ## [0.2.0] - 2026-04-06
 
 ### Added
