@@ -2,6 +2,9 @@
 import json
 import logging
 import shutil
+from unittest.mock import MagicMock
+
+import pytest
 
 from scriptcast.config import ScriptcastConfig
 from scriptcast.directives import ScEvent
@@ -460,3 +463,53 @@ def test_record_no_xtrace_log_by_default(tmp_path):
     xtrace_path = tmp_path / "demo.xtrace"
     assert not xtrace_path.exists()
 
+
+def test_postprocess_applies_unescape_to_dir_events():
+    """adapter.unescape_xtrace is called on dir events, not cmd or out events."""
+    adapter = MagicMock()
+    adapter.unescape_xtrace.side_effect = lambda t: t.replace("BEFORE", "AFTER")
+
+    raw = (
+        "1.0 + : SC scene main\n"
+        "1.1 + echo hi\n"
+        "1.2 hello\n"
+    )
+    _postprocess(raw, adapter=adapter)
+
+    # called once for the dir event "scene main", not for cmd or out
+    assert adapter.unescape_xtrace.call_count == 1
+    adapter.unescape_xtrace.assert_called_with("scene main")
+
+
+def test_postprocess_unescape_transforms_dir_text():
+    """unescape result is used as the directive text in the .sc output."""
+    adapter = MagicMock()
+    adapter.unescape_xtrace.return_value = "set prompt \x1b[92m> \x1b[0m"
+
+    raw = "1.0 + : SC set prompt $'\\C-[[92m> \\C-[[0m'\n"
+    sc_body = _postprocess(raw, adapter=adapter)
+
+    events = [json.loads(line) for line in sc_body.strip().splitlines()]
+    assert events[0][1] == "dir"
+    assert events[0][2] == "set prompt \x1b[92m> \x1b[0m"
+
+
+def test_record_zsh_prompt_esc_bytes(tmp_path):
+    """zsh $'...' prompt survives record → .sc with correct ESC bytes."""
+    zsh = shutil.which("zsh")
+    if zsh is None:
+        pytest.skip("zsh not available")
+
+    script = tmp_path / "t.sh"
+    # $'\x1b[92m> \x1b[0m' expands to ESC bytes; zsh xtrace uses $'\C-[...'
+    script.write_text(": SC set prompt $'\\x1b[92m> \\x1b[0m'\n")
+    sc_path = tmp_path / "t.sc"
+    record(script, sc_path, ScriptcastConfig(), zsh)
+
+    lines = sc_path.read_text().splitlines()
+    dir_events = [
+        json.loads(ln) for ln in lines[1:]
+        if json.loads(ln)[1] == "dir" and json.loads(ln)[2].startswith("set prompt")
+    ]
+    assert dir_events, "no 'set prompt' dir event found in .sc"
+    assert dir_events[0][2] == "set prompt \x1b[92m> \x1b[0m"

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .config import ScriptcastConfig
 from .directives import ScEvent, build_directives
-from .shell import get_adapter
+from .shell import ShellAdapter, get_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +89,16 @@ def _postprocess(
     raw_text: str,
     trace_prefix: str = "+",
     directive_prefix: str = "SC",
+    adapter: ShellAdapter | None = None,
 ) -> str:
     """Convert raw .log text to JSONL .sc body (no header line)."""
     directives = build_directives(directive_prefix, trace_prefix)
     events = _parse_raw(raw_text, trace_prefix, directive_prefix)
+    if adapter is not None:
+        events = [
+            ScEvent(e.ts, e.type, adapter.unescape_xtrace(e.text)) if e.type == "dir" else e
+            for e in events
+        ]
     for d in directives:
         events = d.post(events)
     return _serialise(events)
@@ -184,7 +190,7 @@ def record(
             xtrace_path = sc_path.with_suffix('.xtrace')
             xtrace_path.write_text(raw_text)
             logger.info("Saved: %s", xtrace_path)
-        clean_text = _postprocess(raw_text, config.trace_prefix, config.directive_prefix)
+        clean_text = _postprocess(raw_text, config.trace_prefix, config.directive_prefix, adapter)
         logger.debug("Post-processed to %d events", clean_text.count("\n"))
 
         header = json.dumps({

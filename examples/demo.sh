@@ -5,7 +5,6 @@
 : SC set type_speed 40
 : SC set cmd_wait 80
 : SC set cr_delay 10
-: SC set prompt "$ "
 
 # ── Scene: demo ───────────────────────────────
 : SC scene demo

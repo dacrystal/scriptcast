@@ -227,7 +227,7 @@ def cli(
     out_dir = Path(output_dir) if output_dir else in_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     resolved_shell = shell or _default_shell()
-    theme_path = _resolve_theme(theme) if theme else None
+    theme_path = _resolve_theme(theme or "aurora")
 
     config = build_config(
         script_path=in_path if suffix != ".cast" else None,
